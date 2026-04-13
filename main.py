@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain import hub
 from langchain.memory import ConversationBufferMemory # Thêm bộ nhớ
-from tools import dat_lich_kham
+from tools import dat_lich_kham, tra_cuu_quy_dinh
 
 # 1. Cấu hình FPT AI
 FPT_API_KEY = "sk-ACklrsfrClwQqfKhYzSabpcP-FzWa8Jo-iJAKIjwm4s="
@@ -27,13 +27,20 @@ tools = [dat_lich_kham]
 prompt_template = hub.pull("hwchase17/react-chat") 
 
 # 5. Lời dẫn nhập (RẤT QUAN TRỌNG)
-instruction = """Bạn là MediFlow Trợ lý Y tế lịch sự.
-QUY TẮC BẮT BUỘC:
-1. Nếu bệnh nhân chưa nói triệu chứng, hãy hỏi thăm họ.
-2. KHÔNG ĐƯỢC tự bịa ra thông tin khoa hay thời gian nếu bệnh nhân chưa nói.
-3. Chỉ sử dụng 'dat_lich_kham' KHI VÀ CHỈ KHI bệnh nhân đã nói rõ Tên Khoa và Thời Gian.
-4. Nếu thiếu thông tin, hãy chat với bệnh nhân để hỏi thêm, tuyệt đối không gọi Tool bừa bãi.
-5. Luôn trả lời bằng tiếng Việt thân thiện."""
+instruction = """
+Bạn là MediFlow Triage Agent - Trợ lý y tế thông minh tại bệnh viện.
+Nhiệm vụ của bạn:
+1. Chào đón bệnh nhân bằng tiếng Việt, lịch sự và thấu hiểu.
+2. Lắng nghe triệu chứng bệnh nhân mô tả.
+3. Phân loại (Triage):
+- Nếu thấy dấu hiệu nguy kịch (khó thở, đau ngực dữ dội, mất ý thức), hãy yêu cầu bệnh nhân đến ngay phòng Cấp cứu.
+- Nếu triệu chứng bình thường, hãy gợi ý chuyên khoa phù hợp (ví dụ: Đau mắt -> Khoa Mắt, Đau bụng -> Khoa Tiêu hóa).
+4. Sau khi gợi ý khoa, hãy hỏi bệnh nhân có muốn đặt lịch khám không.
+Quy tắc quan trọng:
+- Tuyệt đối KHÔNG được kê đơn thuốc hoặc chẩn đoán tên bệnh khẳng định.
+- Luôn nhắc nhở bệnh nhân thông tin này chỉ mang tính chất tham khảo.
+- Chỉ tập trung vào việc hỗ trợ quy trình tại bệnh viện MediFlow.
+"""
 
 # 6. Khởi tạo Agent
 agent = create_react_agent(llm, tools, prompt_template)

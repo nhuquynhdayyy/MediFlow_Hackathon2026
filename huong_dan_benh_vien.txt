@@ -1,0 +1,3 @@
+Bệnh viện MediFlow ưu tiên cấp cứu cho các trường hợp: Đau ngực dữ dội, Khó thở.
+Quy trình đặt lịch: Bệnh nhân cần cung cấp Số điện thoại và Khoa muốn khám.
+Khoa Tim mạch nằm ở Tầng 5, chỉ làm việc buổi sáng.
