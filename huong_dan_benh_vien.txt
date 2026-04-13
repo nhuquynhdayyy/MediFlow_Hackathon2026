@@ -1,3 +1,12 @@
-Bệnh viện MediFlow ưu tiên cấp cứu cho các trường hợp: Đau ngực dữ dội, Khó thở.
-Quy trình đặt lịch: Bệnh nhân cần cung cấp Số điện thoại và Khoa muốn khám.
-Khoa Tim mạch nằm ở Tầng 5, chỉ làm việc buổi sáng.
+DANH MỤC LỊCH LÀM VIỆC VÀ VỊ TRÍ KHOA - BỆNH VIỆN MEDIFLOW
+
+1. KHOA TIM MẠCH: Tầng 5, Khu A. Lịch làm việc: Chỉ buổi Sáng.
+2. KHOA THẦN KINH: Tầng 4, Khu C. Lịch làm việc: Sáng và Chiều.
+3. KHOA TIÊU HÓA: Tầng 2, Khu B. Lịch làm việc: Sáng và Chiều.
+4. KHOA NHI: Tầng 3, Khu D. Lịch làm việc: Sáng và Chiều.
+5. KHOA NỘI TỔNG QUÁT: Tầng 1, Khu A. Lịch làm việc: Sáng và Chiều.
+6. KHOA MẮT: Tầng 2, Khu C. Lịch làm việc: Sáng và Chiều.
+
+QUY ĐỊNH CHUNG:
+- Bệnh viện không làm việc buổi Tối và Đêm.
+- Khi đặt lịch, yêu cầu bệnh nhân cung cấp đủ: Tên khoa, Thời gian và Số điện thoại.
