@@ -326,3 +326,67 @@ async def generate_qr(data: dict):
         "expire_at": int(time.time()) + 900,
         "vietqr_url": f"https://img.vietqr.io/image/970422-1234567890-compact2.png?amount={amount}&addInfo=MediFlow{ref}"
     }
+
+
+# ─────────────────────────────────────────────
+# AI Role Detection — phân tích ai là bác sĩ, ai là bệnh nhân
+# ─────────────────────────────────────────────
+@app.post("/api/ai/detect-roles")
+async def detect_roles(data: dict):
+    """
+    Nhận list utterances [{id, text}], trả về roleMap {id: 'doctor'|'patient'}
+    """
+    utterances = data.get("utterances", [])
+    if not utterances:
+        return {"roleMap": {}}
+
+    svc = get_svc()
+
+    system = """Bạn là AI phân tích hội thoại y tế tiếng Việt.
+Nhiệm vụ: xác định từng câu là do BÁC SĨ hay BỆNH NHÂN nói.
+
+Đặc điểm câu của BÁC SĨ:
+- Hỏi về triệu chứng: "Bạn/anh/chị đau ở đâu?", "Từ bao giờ?", "Mức độ thế nào?"
+- Ra chỉ định: "Tôi sẽ kê đơn...", "Cần xét nghiệm...", "Cho anh uống..."
+- Giải thích bệnh: "Đây là dấu hiệu của...", "Huyết áp cao do..."
+- Dùng thuật ngữ y tế chuyên sâu
+- Câu ngắn, hỏi trực tiếp
+
+Đặc điểm câu của BỆNH NHÂN:
+- Mô tả cảm giác: "Tôi bị đau...", "Tôi cảm thấy...", "Dạ em bị..."
+- Trả lời câu hỏi: "Dạ được 3 ngày rồi", "Đau lắm ạ", "Khoảng 7 điểm"
+- Kể lịch sử: "Trước đây tôi có bị...", "Gia đình tôi..."
+- Dùng từ ngữ thông thường, không chuyên môn
+- Thường có "dạ", "ạ", "thưa bác sĩ"
+
+Trả về JSON (chỉ JSON, không text khác):
+{
+  "roles": {
+    "<id>": "doctor",
+    "<id>": "patient"
+  }
+}"""
+
+    # Format utterances for the prompt
+    formatted = "\n".join([f'[{u["id"]}] {u["text"]}' for u in utterances])
+    user = f"Phân tích các câu sau:\n{formatted}"
+
+    result = await svc.chat(system, user)
+    if result is None:
+        # Fallback: simple heuristic
+        role_map = {}
+        for u in utterances:
+            t = u["text"].lower()
+            is_doctor = any([
+                "?" in t,
+                any(w in t for w in ["bạn ", "anh ", "chị ", "ông ", "bà ", "em có", "từ bao", "mức độ", "cần ", "sẽ kê", "xét nghiệm", "huyết áp", "nhiệt độ"]),
+            ])
+            role_map[u["id"]] = "doctor" if is_doctor else "patient"
+        return {"roleMap": role_map}
+
+    try:
+        clean = result.strip().replace("```json","").replace("```","").strip()
+        parsed = json.loads(clean)
+        return {"roleMap": parsed.get("roles", {})}
+    except json.JSONDecodeError:
+        return {"roleMap": {u["id"]: "unknown" for u in utterances}}
