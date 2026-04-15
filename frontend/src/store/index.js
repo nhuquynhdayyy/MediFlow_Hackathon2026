@@ -62,4 +62,8 @@ export const useStore = create((set, get) => ({
   historyData: [],
   setHistoryData: (data) => set({ historyData: data, showHistory: true }),
   closeHistory: () => set({ showHistory: false }),
+
+  user: null, // Lưu thông tin người dùng (email, tên, uid)
+  setUser: (userData) => set({ user: userData }),
+  logoutStore: () => set({ user: null, triageMessages: [] }),
 }))

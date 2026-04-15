@@ -107,3 +107,16 @@ export const generateQR = (patientId, amount, description) =>
 
 // ── Health ────────────────────────────────────────────────────────────────
 export const healthCheck = () => axios.get('/health').then(r => r.data)
+
+import { auth } from "./firebase";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+
+export const register = async (email, password) => {
+  return createUserWithEmailAndPassword(auth, email, password);
+};
+
+export const login = async (email, password) => {
+  return signInWithEmailAndPassword(auth, email, password);
+};
+
+export const logout = () => signOut(auth);

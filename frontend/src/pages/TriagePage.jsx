@@ -23,7 +23,11 @@ const QUICK_PROMPTS = [
 
 export default function TriagePage() {
   const { apiKey, model, triageMessages, addTriageMessage, triageLoading,
-          setTriageLoading, triageSession, setTriageSession, clearTriage } = useStore()
+          setTriageLoading, triageSession, setTriageSession, clearTriage, user } = useStore()
+
+  const welcomeMsg = user 
+    ? `Chào bạn ${user.email}, tôi là MediFlow AI. Tôi có thể giúp gì cho sức khỏe của bạn?` 
+    : `Chào bạn, tôi là MediFlow AI...`;
 
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')

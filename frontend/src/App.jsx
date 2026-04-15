@@ -3,10 +3,14 @@ import { Activity, Stethoscope } from 'lucide-react'
 import TriagePage from './pages/TriagePage'
 import DocAssistPage from './pages/DocAssistPage'
 import SettingsBar from './components/SettingsBar'
+import AuthOverlay from './components/AuthOverlay';
+import { useStore } from './store'
 
 export default function App() {
+  const { user, logoutStore } = useStore();
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
+      <AuthOverlay />
       {/* ── Top Nav ── */}
       <nav className="flex-none h-14 bg-white border-b border-slate-200 flex items-center px-4 gap-4 z-50 shadow-sm">
         {/* Logo */}
@@ -63,6 +67,16 @@ export default function App() {
           <Route path="/docassist"  element={<DocAssistPage />} />
         </Routes>
       </main>
+
+      <nav className="...">
+        {/* Thêm nút Logout ở góc phải Nav */}
+        {user && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">{user.email}</span>
+            <button onClick={logoutStore} className="text-xs text-red-500 font-bold">Thoát</button>
+          </div>
+        )}
+      </nav>
     </div>
   )
 }
