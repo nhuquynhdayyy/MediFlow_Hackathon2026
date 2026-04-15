@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useStore } from '../store'
-import { aiPrescription } from '../services/api'
+import { aiPrescription, aiDrugSuggest } from '../services/api'
 import { toast } from 'react-hot-toast'
 import { Sparkles, Loader2, Plus, Trash2, Search, X, Pill, AlertCircle, Check } from 'lucide-react'
 
@@ -395,12 +395,54 @@ const DRUG_DATABASE = [
   { drug: 'Primaquine 15mg', generic: 'Primaquine', dose: '15mg', route: 'Uống', frequency: '1 lần/ngày', days: 14, instructions: 'Cần kiểm tra men G6PD trước khi dùng', categories: ['ký sinh trùng'], keywords: ['sốt rét vivax','diệt giao bào'] },
 ]
 
+function normText(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+}
+
+function tokenize(s) {
+  return normText(s)
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean)
+    .filter(t => t.length >= 2)
+}
+
 function suggestDrugsByCondition(diagnosis, treatmentPlan) {
   if (!diagnosis && !treatmentPlan) return DRUG_DATABASE.slice(0, 10)
-  const text = `${diagnosis || ''} ${treatmentPlan || ''}`.toLowerCase()
+  const raw = `${diagnosis || ''} ${treatmentPlan || ''}`
+  const n = normText(raw)
+  const tokens = tokenize(raw)
+  // Nối thêm một số cách diễn đạt hay gặp để giảm trượt match
+  const expanded = `${n} ${n.includes('tang huyet ap') ? ' cao huyet ap ' : ''} ${n.includes('dai thao duong') ? ' tieu duong ' : ''} ${n.includes('viem hong') ? ' dau hong ' : ''}`
+
   const scored = DRUG_DATABASE.map(d => {
-    const score = d.keywords.reduce((acc, kw) => acc + (text.includes(kw.toLowerCase()) ? 2 : 0), 0)
-      + d.categories.reduce((acc, cat) => acc + (text.includes(cat.toLowerCase()) ? 1 : 0), 0)
+    const kwScore = (d.keywords || []).reduce((acc, kw) => {
+      const k = normText(kw)
+      if (!k) return acc
+      // match cụm keyword ưu tiên cao hơn match token rời
+      if (expanded.includes(k)) return acc + 3
+      // token overlap: "tieu duong", "cao huyet ap", ...
+      const kTokens = k.split(/[^a-z0-9]+/g).filter(Boolean)
+      const overlap = kTokens.filter(t => tokens.includes(t)).length
+      return acc + Math.min(2, overlap)
+    }, 0)
+
+    const catScore = (d.categories || []).reduce((acc, cat) => {
+      const c = normText(cat)
+      if (!c) return acc
+      if (expanded.includes(c)) return acc + 2
+      const overlap = c.split(/[^a-z0-9]+/g).filter(Boolean).filter(t => tokens.includes(t)).length
+      return acc + Math.min(1, overlap)
+    }, 0)
+
+    const nameScore =
+      (expanded.includes(normText(d.generic)) ? 1 : 0) +
+      (expanded.includes(normText(d.drug)) ? 1 : 0)
+
+    const score = kwScore + catScore + nameScore
     return { ...d, score }
   }).filter(d => d.score > 0)
   scored.sort((a, b) => b.score - a.score)
@@ -414,6 +456,11 @@ export default function PrescriptionTab() {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingIdx, setEditingIdx] = useState(null)
   const [pendingDrugs, setPendingDrugs] = useState(new Set())
+  const [aiSuggestedDrugs, setAiSuggestedDrugs] = useState([]) // subset of DRUG_DATABASE (mapped)
+  const [aiSuggestedSet, setAiSuggestedSet] = useState(new Set()) // drug names in aiSuggestedDrugs
+  const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
+  const [aiPanel, setAiPanel] = useState({ items: [], warnings: [] })
+  const [aiPanelLoading, setAiPanelLoading] = useState(false)
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -426,21 +473,165 @@ export default function PrescriptionTab() {
     }
   }, [showSearch])
 
+  useEffect(() => {
+    // Fetch AI suggestions for the search popup (when opening / when query cleared)
+    const run = async () => {
+      if (!showSearch) return
+      if (searchQuery.trim()) return
+      if (!emr.diagnosis && !emr.treatment_plan && !emr.symptoms) return
+      setAiSuggestLoading(true)
+      try {
+        const res = await aiDrugSuggest({
+          diagnosis: emr.diagnosis || '',
+          chief_complaint: emr.chief_complaint || '',
+          symptoms: emr.symptoms || '',
+          treatment_plan: emr.treatment_plan || '',
+          patient_info: `${activePatient?.age || ''} tuổi, ${activePatient?.gender || ''}`,
+          history: emr.history || '',
+          current_medications: activePatient?.current_medications || [],
+          allergies: activePatient?.allergies || '',
+        })
+        const list = res?.data?.suggestions || []
+
+        // Map AI "name" to our local DRUG_DATABASE entries (best-effort, no crash if not found)
+        const mapped = []
+        for (const s of list) {
+          const name = (s?.name || '').trim()
+          if (!name) continue
+          const nn = normText(name)
+          // Try exact-ish match on drug/generic (contains either direction)
+          const found =
+            DRUG_DATABASE.find(d => normText(d.drug) === nn) ||
+            DRUG_DATABASE.find(d => normText(d.drug).includes(nn) || nn.includes(normText(d.drug))) ||
+            DRUG_DATABASE.find(d => normText(d.generic).includes(nn) || nn.includes(normText(d.generic)))
+          if (found) mapped.push(found)
+        }
+        // de-dup by drug name
+        const uniq = []
+        const seen = new Set()
+        for (const d of mapped) {
+          if (seen.has(d.drug)) continue
+          seen.add(d.drug)
+          uniq.push(d)
+        }
+        setAiSuggestedDrugs(uniq.slice(0, 10))
+        setAiSuggestedSet(new Set(uniq.map(d => d.drug)))
+      } catch {
+        setAiSuggestedDrugs([])
+        setAiSuggestedSet(new Set())
+      } finally {
+        setAiSuggestLoading(false)
+      }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSearch, searchQuery, emr.diagnosis, emr.treatment_plan, emr.symptoms])
+
+  useEffect(() => {
+    // Main panel: AI gợi ý thuốc hiển thị trực tiếp trong tab Đơn thuốc
+    const run = async () => {
+      if (!activePatient) return
+      if (!emr.diagnosis && !emr.treatment_plan && !emr.symptoms) { setAiPanel({ items: [], warnings: [] }); return }
+      setAiPanelLoading(true)
+      try {
+        const res = await aiDrugSuggest({
+          diagnosis: emr.diagnosis || '',
+          chief_complaint: emr.chief_complaint || '',
+          symptoms: emr.symptoms || '',
+          treatment_plan: emr.treatment_plan || '',
+          patient_info: `${activePatient?.age || ''} tuổi, ${activePatient?.gender || ''}`,
+          history: emr.history || '',
+          current_medications: activePatient?.current_medications || [],
+          allergies: activePatient?.allergies || '',
+        })
+        const suggestions = res?.data?.suggestions || []
+        const warnings = res?.data?.warnings || []
+
+        const items = []
+        for (const s of suggestions) {
+          const name = (s?.name || '').trim()
+          if (!name) continue
+          const nn = normText(name)
+          const found =
+            DRUG_DATABASE.find(d => normText(d.drug) === nn) ||
+            DRUG_DATABASE.find(d => normText(d.drug).includes(nn) || nn.includes(normText(d.drug))) ||
+            DRUG_DATABASE.find(d => normText(d.generic).includes(nn) || nn.includes(normText(d.generic)))
+          if (!found) continue
+          items.push({
+            drug: found,
+            meta: {
+              name,
+              class: s?.class || '',
+              reason: s?.reason || '',
+              priority: s?.priority || '',
+              cautions: Array.isArray(s?.cautions) ? s.cautions : [],
+            },
+          })
+        }
+        // de-dup by drug name and keep order
+        const uniq = []
+        const seen = new Set()
+        for (const it of items) {
+          if (seen.has(it.drug.drug)) continue
+          seen.add(it.drug.drug)
+          uniq.push(it)
+        }
+        setAiPanel({ items: uniq.slice(0, 8), warnings })
+      } catch {
+        setAiPanel({ items: [], warnings: [] })
+      } finally {
+        setAiPanelLoading(false)
+      }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePatient?.id, emr.diagnosis, emr.treatment_plan, emr.symptoms, emr.chief_complaint])
+
+  const mergedSuggestions = useMemo(() => {
+    if (!aiSuggestedDrugs.length) return suggestDrugsByCondition(emr.diagnosis, emr.treatment_plan)
+    const base = suggestDrugsByCondition(emr.diagnosis, emr.treatment_plan)
+    const seen = new Set(aiSuggestedDrugs.map(d => d.drug))
+    const rest = base.filter(d => !seen.has(d.drug))
+    return [...aiSuggestedDrugs, ...rest].slice(0, 15)
+  }, [aiSuggestedDrugs, emr.diagnosis, emr.treatment_plan])
+
   const suggestions = useMemo(
-    () => suggestDrugsByCondition(emr.diagnosis, emr.treatment_plan),
-    [emr.diagnosis, emr.treatment_plan]
+    () => mergedSuggestions,
+    [mergedSuggestions]
+  )
+
+  const suggestedDrugSet = useMemo(
+    () => new Set(suggestions.map(d => d.drug)),
+    [suggestions]
   )
 
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return suggestions
-    const q = searchQuery.toLowerCase()
-    return DRUG_DATABASE.filter(d =>
-      d.drug.toLowerCase().includes(q) ||
-      d.generic.toLowerCase().includes(q) ||
-      d.categories.some(c => c.includes(q)) ||
-      d.keywords.some(k => k.includes(q))
-    ).slice(0, 20)
-  }, [searchQuery, suggestions])
+    const base = !searchQuery.trim()
+      ? suggestions
+      : (() => {
+          const qn = normText(searchQuery)
+          return DRUG_DATABASE.filter(d =>
+            normText(d.drug).includes(qn) ||
+            normText(d.generic).includes(qn) ||
+            (d.categories || []).some(c => normText(c).includes(qn)) ||
+            (d.keywords || []).some(k => normText(k).includes(qn))
+          ).slice(0, 20)
+        })()
+
+    // Ưu tiên các thuốc đã chọn trước để dễ nhận ra khi tìm kiếm
+    const arr = base.map((d, idx) => ({
+      d,
+      idx,
+      picked: pendingDrugs.has(d.drug),
+      suggested: suggestedDrugSet.has(d.drug),
+    }))
+    arr.sort((a, b) => {
+      if (a.picked !== b.picked) return a.picked ? -1 : 1
+      if (a.suggested !== b.suggested) return a.suggested ? -1 : 1
+      return a.idx - b.idx
+    })
+    return arr.map(x => x.d)
+  }, [searchQuery, suggestions, pendingDrugs, suggestedDrugSet])
 
   const isAlreadyAdded = (drugName) => prescriptions.some(rx => (rx.drug || rx.name) === drugName)
 
@@ -463,8 +654,28 @@ export default function PrescriptionTab() {
     if (!emr.diagnosis) { toast.error('Vui lòng nhập chẩn đoán trước'); return }
     setLoading('prescription', true)
     try {
+      // Ưu tiên đồng bộ đơn thuốc theo đúng AI panel gợi ý nếu đã có
+      const panelList = (aiPanel?.items || []).map(it => it.drug).filter(Boolean)
+      if (panelList.length > 0) {
+        const synced = panelList.map(d => ({
+          drug: d.drug,
+          generic: d.generic,
+          dose: d.dose,
+          route: d.route,
+          frequency: d.frequency,
+          days: d.days,
+          instructions: d.instructions,
+        }))
+        setEmrField('prescriptions', synced)
+        toast.success(`Đã đồng bộ ${synced.length} thuốc theo AI gợi ý`)
+        return
+      }
+
       const res = await aiPrescription({
         diagnosis: emr.diagnosis,
+        chief_complaint: emr.chief_complaint || '',
+        symptoms: emr.symptoms || '',
+        treatment_plan: emr.treatment_plan || '',
         patient_info: `${activePatient?.age || ''} tuổi, ${activePatient?.gender || ''}`,
         history: emr.history,
         current_medications: activePatient?.current_medications || [],
@@ -518,6 +729,61 @@ export default function PrescriptionTab() {
           AI tạo đơn thuốc
         </button>
       </div>
+
+      {(aiPanelLoading || aiPanel.items.length > 0 || aiPanel.warnings.length > 0) && (
+        <div className="bg-white border border-gray-100 rounded-xl p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+              <Sparkles size={12} className="text-purple-600" />
+              AI gợi ý thuốc (bấm để thêm)
+            </div>
+            {aiPanelLoading && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={11} className="spin" />Đang gợi ý...</span>}
+          </div>
+
+          {aiPanel.warnings?.length > 0 && (
+            <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+              <div className="font-medium mb-1">Lưu ý</div>
+              <div className="space-y-0.5">
+                {aiPanel.warnings.slice(0, 3).map((w, i) => <div key={i}>- {w}</div>)}
+              </div>
+            </div>
+          )}
+
+          {aiPanel.items.length === 0 && !aiPanelLoading ? (
+            <div className="text-xs text-gray-400 mt-2">Nhập chẩn đoán/triệu chứng để AI gợi ý thuốc phù hợp.</div>
+          ) : (
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              {aiPanel.items.map((it, idx) => {
+                const already = isAlreadyAdded(it.drug.drug)
+                return (
+                  <button
+                    key={`${it.drug.drug}-${idx}`}
+                    onClick={() => addDrug(it.drug)}
+                    disabled={already}
+                    className={`text-left border rounded-xl px-3 py-2 transition ${
+                      already ? 'border-gray-100 bg-gray-50 opacity-70 cursor-not-allowed' : 'border-purple-100 bg-purple-50/40 hover:bg-purple-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-gray-900">{it.drug.drug}</span>
+                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">AI gợi ý</span>
+                      {it.meta?.priority && (
+                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{it.meta.priority}</span>
+                      )}
+                      {already && <span className="text-xs text-gray-400">(đã có)</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">{it.drug.generic} · {it.drug.dose} · {it.drug.route}</div>
+                    {it.meta?.reason && <div className="text-xs text-gray-600 mt-1">{it.meta.reason}</div>}
+                    {it.meta?.cautions?.length > 0 && (
+                      <div className="text-xs text-amber-700 mt-1">Thận trọng: {it.meta.cautions.slice(0, 2).join(', ')}</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {!emr.diagnosis && (
         <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -617,7 +883,13 @@ export default function PrescriptionTab() {
             {/* Label + chọn tất cả */}
             <div className="px-4 pt-2 pb-1 flex items-center justify-between">
               <span className="text-xs text-gray-400 font-medium">
-                {searchQuery ? `Kết quả (${searchResults.length})` : emr.diagnosis ? '✨ Gợi ý theo chẩn đoán & kế hoạch điều trị' : 'Thuốc phổ biến'}
+                {searchQuery
+                  ? `Kết quả (${searchResults.length})`
+                  : (aiSuggestLoading
+                      ? '✨ AI đang gợi ý theo chẩn đoán...'
+                      : (emr.diagnosis ? '✨ AI gợi ý theo chẩn đoán & kế hoạch điều trị' : 'Thuốc phổ biến')
+                    )
+                }
               </span>
               {searchResults.length > 0 && (
                 <button
@@ -642,6 +914,8 @@ export default function PrescriptionTab() {
                 <div className="text-center py-8 text-gray-300 text-sm">Không tìm thấy thuốc phù hợp</div>
               ) : searchResults.map((d, i) => {
                 const isChecked = pendingDrugs.has(d.drug)
+                const isSuggested = suggestedDrugSet.has(d.drug)
+                const isAiSuggested = aiSuggestedSet.has(d.drug)
                 return (
                   <label
                     key={i}
@@ -657,6 +931,16 @@ export default function PrescriptionTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`text-sm font-medium ${isChecked ? 'text-blue-800' : 'text-gray-800'}`}>{d.drug}</span>
+                        {isAiSuggested && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                            AI gợi ý
+                          </span>
+                        )}
+                        {isSuggested && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                            Gợi ý theo chẩn đoán
+                          </span>
+                        )}
                         {d.categories.slice(0,2).map(cat => (
                           <span key={cat} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{cat}</span>
                         ))}

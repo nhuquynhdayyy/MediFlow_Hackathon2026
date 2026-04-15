@@ -34,6 +34,9 @@ class PrescriptionRequest(BaseModel):
     diagnosis:           str
     patient_info:        str  = ""
     history:             str  = ""
+    symptoms:            str  = ""
+    chief_complaint:     str  = ""
+    treatment_plan:      Optional[str] = ""
     current_medications: Optional[List[str]] = []
     allergies:           Optional[str] = ""
     model:               Optional[str] = None
@@ -45,6 +48,18 @@ class LabRequest(BaseModel):
     history:       str  = ""
     existing_labs: Optional[List[str]] = []
     model:         Optional[str] = None
+
+
+class DrugSuggestRequest(BaseModel):
+    diagnosis:           str = ""
+    symptoms:            str = ""
+    chief_complaint:     str = ""
+    treatment_plan:      str = ""
+    patient_info:        str = ""
+    history:             str = ""
+    current_medications: Optional[List[str]] = []
+    allergies:           str = ""
+    model:               Optional[str] = None
 
 
 class VoiceTranscriptRequest(BaseModel):

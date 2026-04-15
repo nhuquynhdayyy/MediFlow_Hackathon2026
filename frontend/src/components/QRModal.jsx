@@ -221,12 +221,24 @@ export default function QRModal({ patient, onClose }) {
                 </div>
               )}
 
-              {/* Lab reminder */}
-              {bill.labs.length>0 && (
+              {/* Lab + imaging reminder (full list) */}
+              {(bill.labs.length>0 || bill.imagings.length>0) && (
                 <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-xs text-amber-700">
-                  <div className="font-medium mb-1">Nhắc bệnh nhân xét nghiệm</div>
-                  {bill.labs.slice(0,3).map((t,i)=><div key={i}>• {t}</div>)}
-                  {bill.labs.length>3 && <div>…và {bill.labs.length-3} xét nghiệm khác</div>}
+                  <div className="font-medium mb-1">Nhắc bệnh nhân cận lâm sàng (đầy đủ)</div>
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {bill.labs.length > 0 && (
+                      <div>
+                        <div className="font-medium text-amber-800 mb-0.5">Xét nghiệm</div>
+                        {bill.labs.map((t, i) => <div key={`lab-${i}`}>• {t}</div>)}
+                      </div>
+                    )}
+                    {bill.imagings.length > 0 && (
+                      <div className={bill.labs.length > 0 ? 'pt-1 border-t border-amber-200/70' : ''}>
+                        <div className="font-medium text-amber-800 mb-0.5">Chẩn đoán hình ảnh / thăm dò</div>
+                        {bill.imagings.map((t, i) => <div key={`img-${i}`}>• {t}</div>)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

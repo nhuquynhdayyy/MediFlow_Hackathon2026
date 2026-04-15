@@ -14,6 +14,21 @@ import {
   Search, Plus, Microscope, AlertCircle, Check,
 } from 'lucide-react'
 
+function normText(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+}
+
+function tokenize(s) {
+  return normText(s)
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean)
+    .filter(t => t.length >= 2)
+}
+
 // ─── BỘ DATA XÉT NGHIỆM ĐẦY ĐỦ ─────────────────────────────────────────────
 const LAB_DATABASE = [
   // ── Huyết học ──
@@ -147,9 +162,25 @@ const PRIORITY_ORDER = ['urgent', 'imaging', 'routine', 'optional']
 // Gợi ý xét nghiệm theo chẩn đoán
 function suggestLabsByCondition(diagnosis, symptoms) {
   if (!diagnosis && !symptoms) return LAB_DATABASE.slice(0, 12)
-  const text = `${diagnosis || ''} ${symptoms || ''}`.toLowerCase()
+  const raw = `${diagnosis || ''} ${symptoms || ''}`
+  const n = normText(raw)
+  const tokens = tokenize(raw)
+  const expanded = `${n} ${n.includes('tang huyet ap') ? ' cao huyet ap ' : ''} ${n.includes('dai thao duong') ? ' tieu duong ' : ''}`
   const scored = LAB_DATABASE.map(d => {
-    const score = d.keywords.reduce((acc, kw) => acc + (text.includes(kw.toLowerCase()) ? 2 : 0), 0)
+    const kwScore = (d.keywords || []).reduce((acc, kw) => {
+      const k = normText(kw)
+      if (!k) return acc
+      if (expanded.includes(k)) return acc + 3
+      const kTokens = k.split(/[^a-z0-9]+/g).filter(Boolean)
+      const overlap = kTokens.filter(t => tokens.includes(t)).length
+      return acc + Math.min(2, overlap)
+    }, 0)
+
+    const metaScore =
+      (expanded.includes(normText(d.category)) ? 1 : 0) +
+      (expanded.includes(normText(d.reason)) ? 1 : 0)
+
+    const score = kwScore + metaScore
     return { ...d, score }
   }).filter(d => d.score > 0)
   scored.sort((a, b) => b.score - a.score)
@@ -163,6 +194,11 @@ export default function LabTab() {
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [pendingItems, setPendingItems] = useState(new Set())
+  const [aiSuggestedLabs, setAiSuggestedLabs] = useState([])
+  const [aiSuggestedSet, setAiSuggestedSet] = useState(new Set())
+  const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
+  const [aiPanel, setAiPanel] = useState([])
+  const [aiPanelLoading, setAiPanelLoading] = useState(false)
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -174,28 +210,189 @@ export default function LabTab() {
     if (showSearch) setPendingItems(new Set(selected))
   }, [showSearch])
 
+  useEffect(() => {
+    // Popup search: AI gợi ý nhanh (khi mở popup và chưa gõ query)
+    const run = async () => {
+      if (!showSearch) return
+      if (searchQuery.trim()) return
+      if (!emr.diagnosis && !emr.symptoms) return
+      setAiSuggestLoading(true)
+      try {
+        const res = await aiLabSuggest({
+          symptoms: emr.symptoms || '',
+          diagnosis: emr.diagnosis || '',
+          history: emr.history || '',
+          existing_labs: [],
+        })
+        const d = res?.data || {}
+        const list = [
+          ...(d.urgent || []),
+          ...(d.imaging || []),
+          ...(d.routine || []),
+          ...(d.optional || []),
+        ]
+
+        const mapped = []
+        for (const s of list) {
+          const name = (s?.test || '').trim()
+          if (!name) continue
+          const nn = normText(name)
+          const found =
+            LAB_DATABASE.find(x => normText(x.test) === nn) ||
+            LAB_DATABASE.find(x => normText(x.test).includes(nn) || nn.includes(normText(x.test)))
+          if (found) mapped.push(found)
+        }
+        const uniq = []
+        const seen = new Set()
+        for (const x of mapped) {
+          if (seen.has(x.test)) continue
+          seen.add(x.test)
+          uniq.push(x)
+        }
+        setAiSuggestedLabs(uniq.slice(0, 12))
+        setAiSuggestedSet(new Set(uniq.map(x => x.test)))
+      } catch {
+        setAiSuggestedLabs([])
+        setAiSuggestedSet(new Set())
+      } finally {
+        setAiSuggestLoading(false)
+      }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSearch, searchQuery, emr.diagnosis, emr.symptoms])
+
+  useEffect(() => {
+    // Panel chính: AI gợi ý xét nghiệm để bấm thêm nhanh như tab Thuốc
+    const run = async () => {
+      if (!emr.diagnosis && !emr.symptoms) {
+        setAiPanel([])
+        return
+      }
+      setAiPanelLoading(true)
+      try {
+        const res = await aiLabSuggest({
+          symptoms: emr.symptoms || '',
+          diagnosis: emr.diagnosis || '',
+          history: emr.history || '',
+          existing_labs: [...selected],
+        })
+        const d = res?.data || {}
+        const flatten = [
+          ...(d.urgent || []).map(x => ({ ...x, priority: 'urgent' })),
+          ...(d.imaging || []).map(x => ({ ...x, priority: 'imaging' })),
+          ...(d.routine || []).map(x => ({ ...x, priority: 'routine' })),
+          ...(d.optional || []).map(x => ({ ...x, priority: 'optional' })),
+        ]
+
+        const mapped = []
+        for (const it of flatten) {
+          const name = (it?.test || '').trim()
+          if (!name) continue
+          const nn = normText(name)
+          const found =
+            LAB_DATABASE.find(x => normText(x.test) === nn) ||
+            LAB_DATABASE.find(x => normText(x.test).includes(nn) || nn.includes(normText(x.test)))
+          if (!found) continue
+          mapped.push({
+            test: found.test,
+            category: found.category,
+            reason: it.reason || found.reason,
+            expected_result: it.expected_result || '',
+            priority: it.priority || 'optional',
+          })
+        }
+
+        const uniq = []
+        const seen = new Set()
+        for (const x of mapped) {
+          if (seen.has(x.test)) continue
+          seen.add(x.test)
+          uniq.push(x)
+        }
+        setAiPanel(uniq.slice(0, 8))
+      } catch {
+        setAiPanel([])
+      } finally {
+        setAiPanelLoading(false)
+      }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emr.diagnosis, emr.symptoms, emr.history])
+
+  const mergedSuggestions = useMemo(() => {
+    if (!aiSuggestedLabs.length) return suggestLabsByCondition(emr.diagnosis, emr.symptoms)
+    const base = suggestLabsByCondition(emr.diagnosis, emr.symptoms)
+    const seen = new Set(aiSuggestedLabs.map(x => x.test))
+    const rest = base.filter(x => !seen.has(x.test))
+    return [...aiSuggestedLabs, ...rest].slice(0, 15)
+  }, [aiSuggestedLabs, emr.diagnosis, emr.symptoms])
+
   const handleAI = async () => {
     setLoading('lab', true)
     try {
-      const res = await aiLabSuggest({
-        symptoms: emr.symptoms, diagnosis: emr.diagnosis,
-        history: emr.history, existing_labs: [],
-      })
-      const d = res.data
-      const all = [
-        ...(d.urgent  || []).map(x => ({ ...x, priority: 'urgent'   })),
-        ...(d.routine || []).map(x => ({ ...x, priority: 'routine'  })),
-        ...(d.optional|| []).map(x => ({ ...x, priority: 'optional' })),
-        ...(d.imaging || []).map(x => ({ ...x, priority: 'imaging'  })),
-      ]
+      // Ưu tiên dùng đúng danh sách AI đang hiển thị ở panel để đảm bảo đồng nhất UX
+      let aiList = [...aiPanel]
+
+      // Nếu panel chưa có dữ liệu thì gọi AI mới và map theo cùng logic panel
+      if (aiList.length === 0) {
+        const res = await aiLabSuggest({
+          symptoms: emr.symptoms || '',
+          diagnosis: emr.diagnosis || '',
+          history: emr.history || '',
+          existing_labs: [],
+        })
+        const d = res?.data || {}
+        const flatten = [
+          ...(d.urgent || []).map(x => ({ ...x, priority: 'urgent' })),
+          ...(d.imaging || []).map(x => ({ ...x, priority: 'imaging' })),
+          ...(d.routine || []).map(x => ({ ...x, priority: 'routine' })),
+          ...(d.optional || []).map(x => ({ ...x, priority: 'optional' })),
+        ]
+        const mapped = []
+        for (const it of flatten) {
+          const name = (it?.test || '').trim()
+          if (!name) continue
+          const nn = normText(name)
+          const found =
+            LAB_DATABASE.find(x => normText(x.test) === nn) ||
+            LAB_DATABASE.find(x => normText(x.test).includes(nn) || nn.includes(normText(x.test)))
+          if (!found) continue
+          mapped.push({
+            test: found.test,
+            category: found.category,
+            reason: it.reason || found.reason,
+            expected_result: it.expected_result || '',
+            priority: it.priority || 'optional',
+          })
+        }
+        const uniq = []
+        const seen = new Set()
+        for (const x of mapped) {
+          if (seen.has(x.test)) continue
+          seen.add(x.test)
+          uniq.push(x)
+        }
+        aiList = uniq.slice(0, 8)
+        setAiPanel(aiList)
+      }
+
+      // Nếu có thêm item ngoài AI-list, giữ lại dưới dạng optional và KHÔNG tự tick
+      const aiSet = new Set(aiList.map(x => x.test))
+      const extraOptional = suggestedLabs
+        .filter(x => !aiSet.has(x.test))
+        .map(x => ({ ...x, priority: 'optional' }))
+
+      const all = [...aiList, ...extraOptional]
       setSuggestedLabs(all)
       setEmrField('_labData', all)
-      const autoSelect = new Set(
-        all.filter(x => x.priority === 'urgent' || x.priority === 'imaging').map(x => x.test)
-      )
+
+      // Tick toàn bộ các mục AI gợi ý; mục ngoài AI-list giữ optional và chưa tick
+      const autoSelect = new Set(aiList.map(x => x.test))
       setSelected(autoSelect)
       syncToEMR(autoSelect)
-      toast.success(`Gợi ý ${all.length} xét nghiệm — đã tự chọn ${autoSelect.size} ưu tiên cao`)
+      toast.success(`Đồng bộ ${aiList.length} xét nghiệm AI — đã tick toàn bộ gợi ý; mục ngoài AI để tùy chọn`)
     } catch { toast.error('Lỗi gợi ý xét nghiệm') }
     finally { setLoading('lab', false) }
   }
@@ -233,21 +430,40 @@ export default function LabTab() {
 
   // Gợi ý từ database theo chẩn đoán
   const dbSuggestions = useMemo(
-    () => suggestLabsByCondition(emr.diagnosis, emr.symptoms),
-    [emr.diagnosis, emr.symptoms]
+    () => mergedSuggestions,
+    [mergedSuggestions]
   )
 
   // Tìm kiếm trong database
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return dbSuggestions
-    const q = searchQuery.toLowerCase()
-    return LAB_DATABASE.filter(d =>
-      d.test.toLowerCase().includes(q) ||
-      d.category.toLowerCase().includes(q) ||
-      d.reason.toLowerCase().includes(q) ||
-      d.keywords.some(k => k.includes(q))
-    ).slice(0, 20)
-  }, [searchQuery, dbSuggestions])
+    const base = !searchQuery.trim()
+      ? dbSuggestions
+      : (() => {
+          const qn = normText(searchQuery)
+          return LAB_DATABASE.filter(d =>
+            normText(d.test).includes(qn) ||
+            normText(d.category).includes(qn) ||
+            normText(d.reason).includes(qn) ||
+            (d.keywords || []).some(k => normText(k).includes(qn))
+          ).slice(0, 20)
+        })()
+
+    const suggestedSet = new Set(dbSuggestions.map(x => x.test))
+
+    // Ưu tiên các xét nghiệm đã chọn trước để dễ nhận ra khi tìm kiếm
+    const arr = base.map((item, idx) => ({
+      item,
+      idx,
+      picked: pendingItems.has(item.test),
+      suggested: suggestedSet.has(item.test),
+    }))
+    arr.sort((a, b) => {
+      if (a.picked !== b.picked) return a.picked ? -1 : 1
+      if (a.suggested !== b.suggested) return a.suggested ? -1 : 1
+      return a.idx - b.idx
+    })
+    return arr.map(x => x.item)
+  }, [searchQuery, dbSuggestions, pendingItems])
 
   const isAlreadySelected = (test) => selected.has(test)
 
@@ -277,6 +493,19 @@ export default function LabTab() {
     setSearchQuery('')
   }
 
+  const addLabFromAI = (item) => {
+    let updated = [...suggestedLabs]
+    if (!updated.some(l => l.test === item.test)) updated.push(item)
+    setSuggestedLabs(updated)
+    setEmrField('_labData', updated)
+
+    const next = new Set(selected)
+    next.add(item.test)
+    setSelected(next)
+    syncToEMR(next)
+    toast.success(`Đã thêm ${item.test}`)
+  }
+
   const totalSelected = selected.size
 
   return (
@@ -302,6 +531,53 @@ export default function LabTab() {
         <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <AlertCircle size={13} />
           Nhập triệu chứng hoặc chẩn đoán để xem gợi ý xét nghiệm phù hợp
+        </div>
+      )}
+
+      {(aiPanelLoading || aiPanel.length > 0) && (
+        <div className="bg-white border border-gray-100 rounded-xl p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+              <Sparkles size={12} className="text-purple-600" />
+              AI gợi ý xét nghiệm (bấm để thêm)
+            </div>
+            {aiPanelLoading && (
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                <Loader2 size={11} className="spin" />Đang gợi ý...
+              </span>
+            )}
+          </div>
+
+          {aiPanel.length > 0 && (
+            <div className="mt-2 grid grid-cols-1 gap-2">
+              {aiPanel.map((item, idx) => {
+                const already = selected.has(item.test)
+                const cfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG.optional
+                return (
+                  <button
+                    key={`${item.test}-${idx}`}
+                    onClick={() => addLabFromAI(item)}
+                    disabled={already}
+                    className={`text-left border rounded-xl px-3 py-2 transition ${
+                      already ? 'border-gray-100 bg-gray-50 opacity-70 cursor-not-allowed' : 'border-purple-100 bg-purple-50/40 hover:bg-purple-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-gray-900">{item.test}</span>
+                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">AI gợi ý</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded border ${cfg.cls}`}>{cfg.label}</span>
+                      {already && <span className="text-xs text-gray-400">(đã chọn)</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">{item.category}</div>
+                    {item.reason && <div className="text-xs text-gray-600 mt-1">{item.reason}</div>}
+                    {item.expected_result && (
+                      <div className="text-xs text-blue-600 mt-1">Dự kiến: {item.expected_result}</div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -449,7 +725,13 @@ export default function LabTab() {
             {/* Label */}
             <div className="px-4 pt-2 pb-1 flex items-center justify-between">
               <span className="text-xs text-gray-400 font-medium">
-                {searchQuery ? `Kết quả (${searchResults.length})` : emr.diagnosis || emr.symptoms ? '✨ Gợi ý theo chẩn đoán / triệu chứng' : 'Xét nghiệm phổ biến'}
+                {searchQuery
+                  ? `Kết quả (${searchResults.length})`
+                  : (aiSuggestLoading
+                      ? '✨ AI đang gợi ý theo chẩn đoán / triệu chứng...'
+                      : (emr.diagnosis || emr.symptoms ? '✨ AI gợi ý theo chẩn đoán / triệu chứng' : 'Xét nghiệm phổ biến')
+                    )
+                }
               </span>
               {searchResults.length > 0 && (
                 <button
@@ -474,6 +756,8 @@ export default function LabTab() {
                 <div className="text-center py-8 text-gray-300 text-sm">Không tìm thấy xét nghiệm phù hợp</div>
               ) : searchResults.map((item, i) => {
                 const isChecked = pendingItems.has(item.test)
+                const isSuggested = dbSuggestions.some(x => x.test === item.test)
+                const isAiSuggested = aiSuggestedSet.has(item.test)
                 return (
                   <label
                     key={i}
@@ -489,6 +773,16 @@ export default function LabTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`text-sm font-medium ${isChecked ? 'text-teal-800' : 'text-gray-800'}`}>{item.test}</span>
+                        {isAiSuggested && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                            AI gợi ý
+                          </span>
+                        )}
+                        {isSuggested && (
+                          <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">
+                            Gợi ý theo chẩn đoán
+                          </span>
+                        )}
                         <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{item.category}</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5 italic">{item.reason}</div>

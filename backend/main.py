@@ -19,7 +19,7 @@ DEFAULT_MODEL = os.getenv("FPT_DEFAULT_MODEL", "Llama-3.3-70B-Instruct")
 
 from models import (
     ChatRequest, EMRData, PrescriptionRequest,
-    LabRequest, VoiceTranscriptRequest, SaveEMRRequest
+    LabRequest, DrugSuggestRequest, VoiceTranscriptRequest, SaveEMRRequest
 )
 from services.fpt_ai import FPTAIService
 from services.emr import EMRService
@@ -44,6 +44,33 @@ def get_svc(model: str = None) -> FPTAIService:
     if not FPT_API_KEY:
         raise HTTPException(status_code=500, detail="FPT_API_KEY chưa được cấu hình trong file .env")
     return FPTAIService(FPT_API_KEY, model or DEFAULT_MODEL)
+
+def _clean_json_text(text: str) -> str:
+    if not text:
+        return ""
+    return text.strip().replace("```json", "").replace("```", "").strip()
+
+def _safe_json_loads(text: str):
+    """
+    Parse JSON returned by LLM robustly.
+    If it contains leading/trailing text, try to extract first {...} block.
+    """
+    cleaned = _clean_json_text(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Best-effort extract JSON object/array substring
+        start_obj = cleaned.find("{")
+        start_arr = cleaned.find("[")
+        if start_obj == -1 and start_arr == -1:
+            raise
+        start = start_obj if start_arr == -1 else (start_arr if start_obj == -1 else min(start_obj, start_arr))
+        end_obj = cleaned.rfind("}")
+        end_arr = cleaned.rfind("]")
+        end = max(end_obj, end_arr)
+        if start >= 0 and end > start:
+            return json.loads(cleaned[start:end+1])
+        raise
 
 
 # ─────────────────────────────────────────────
@@ -119,7 +146,7 @@ Trả lời JSON (chỉ JSON, không text khác):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
         return {"success": True, "data": {"primary_diagnosis": result, "differential": [], "urgency": "bình thường", "reasoning": result, "next_steps": []}}
@@ -154,7 +181,7 @@ Trả lời JSON (chỉ JSON):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
         return {"success": True, "data": {"medications": [], "non_pharmacological": [result], "monitoring": [], "follow_up": "", "lifestyle": [], "warnings": []}}
@@ -166,17 +193,30 @@ Trả lời JSON (chỉ JSON):
 @app.post("/api/ai/prescription")
 async def ai_prescription(req: PrescriptionRequest):
     svc = get_svc(req.model)
-    system = """Bạn là dược sĩ AI tại Việt Nam. Tạo đơn thuốc theo phác đồ Bộ Y tế, kiểm tra tương tác thuốc.
+    system = """Bạn là dược sĩ lâm sàng AI tại Việt Nam.
+Mục tiêu: tạo đơn thuốc HỢP LÝ, CHÍNH XÁC theo hướng dẫn Bộ Y tế Việt Nam và thực hành an toàn thuốc.
+
+Quy tắc bắt buộc:
+- Nếu có "treatment_plan" (kế hoạch điều trị), phải ƯU TIÊN và bám sát các thuốc trong đó; chỉ thêm thuốc hỗ trợ khi thật cần, nêu rõ lý do.
+- Không đề xuất thuốc mâu thuẫn với chẩn đoán hoặc thiếu chỉ định rõ ràng.
+- Kiểm tra dị ứng, thuốc đang dùng, nguy cơ tương tác và chống chỉ định thường gặp; nếu thiếu dữ liệu quan trọng thì đưa vào "warnings".
+- Liều lượng phải thực tế theo người lớn (trừ khi có thông tin trẻ em), ghi đường dùng, tần suất, số ngày; tránh đề xuất liều nguy hiểm.
+
 Trả lời JSON (chỉ JSON):
 {
   "prescriptions": [{"drug":"","generic":"","dose":"","route":"","frequency":"","days":30,"quantity":"","instructions":""}],
   "interactions": [],
   "contraindications": [],
+  "warnings": [],
+  "rationale": "",
   "total_cost_estimate": ""
 }"""
 
     user = f"""Tạo đơn thuốc:
 - Chẩn đoán: {req.diagnosis}
+- Lý do khám: {req.chief_complaint or 'Không rõ'}
+- Triệu chứng: {req.symptoms or 'Không rõ'}
+- Kế hoạch điều trị (nếu có): {req.treatment_plan or 'Không có'}
 - Thuốc đang dùng: {', '.join(req.current_medications) if req.current_medications else 'Không có'}
 - Dị ứng: {req.allergies or 'Không có'}
 - Tiền sử: {req.history}
@@ -186,10 +226,10 @@ Trả lời JSON (chỉ JSON):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {"success": True, "data": {"prescriptions": [], "interactions": [], "contraindications": [], "total_cost_estimate": "N/A", "raw": result}}
+        return {"success": True, "data": {"prescriptions": [], "interactions": [], "contraindications": [], "warnings": [], "rationale": "", "total_cost_estimate": "N/A", "raw": result}}
 
 
 # ─────────────────────────────────────────────
@@ -199,6 +239,9 @@ Trả lời JSON (chỉ JSON):
 async def ai_lab(req: LabRequest):
     svc = get_svc(req.model)
     system = """Bạn là bác sĩ AI chuyên chẩn đoán tại Việt Nam. Gợi ý xét nghiệm theo mức độ ưu tiên.
+Nguyên tắc:
+- Ưu tiên xét nghiệm giúp loại trừ chẩn đoán nguy hiểm và xác nhận chẩn đoán chính.
+- Tránh gợi ý xét nghiệm trùng lặp/không liên quan; nếu thiếu dữ kiện (tuổi, thai kỳ, bệnh nền...) hãy ghi vào reason ngắn gọn.
 Trả lời JSON (chỉ JSON):
 {
   "urgent":   [{"test":"","reason":"","expected_result":""}],
@@ -217,10 +260,59 @@ Trả lời JSON (chỉ JSON):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
         return {"success": True, "data": {"urgent": [], "routine": [], "optional": [], "imaging": [], "raw": result}}
+
+
+# ─────────────────────────────────────────────
+# AI Drug Suggestions (for search popup)
+# ─────────────────────────────────────────────
+@app.post("/api/ai/drug-suggestions")
+async def ai_drug_suggestions(req: DrugSuggestRequest):
+    svc = get_svc(req.model)
+    system = """Bạn là bác sĩ/dược sĩ lâm sàng AI tại Việt Nam.
+Nhiệm vụ: gợi ý danh sách thuốc KHẢ DĨ (không phải đơn hoàn chỉnh) dựa trên chẩn đoán/triệu chứng/kế hoạch điều trị.
+
+Yêu cầu:
+- Ưu tiên thuốc phù hợp hướng dẫn điều trị (Bộ Y tế VN); tránh gợi ý sai chỉ định.
+- Nếu thiếu dữ kiện quan trọng (tuổi, thai kỳ, chức năng thận/gan...) hãy thêm vào warnings.
+- Mỗi gợi ý phải có reason ngắn gọn (vì sao dùng).
+- Không bịa tên thuốc không tồn tại; ưu tiên generic phổ biến ở VN.
+
+Trả lời JSON (chỉ JSON):
+{
+  "suggestions": [
+    {
+      "name": "Tên thuốc (ưu tiên generic hoặc generic + hàm lượng)",
+      "class": "nhóm thuốc",
+      "reason": "vì sao phù hợp",
+      "priority": "first-line|adjunct|symptomatic|avoid",
+      "cautions": ["..."]
+    }
+  ],
+  "warnings": []
+}"""
+
+    user = f"""Thông tin lâm sàng:
+- Chẩn đoán: {req.diagnosis or 'Chưa có'}
+- Lý do khám: {req.chief_complaint or 'Không rõ'}
+- Triệu chứng: {req.symptoms or 'Không rõ'}
+- Kế hoạch điều trị (nếu có): {req.treatment_plan or 'Không có'}
+- Thuốc đang dùng: {', '.join(req.current_medications) if req.current_medications else 'Không có'}
+- Dị ứng: {req.allergies or 'Không có'}
+- Tiền sử: {req.history or 'Không rõ'}
+- Bệnh nhân: {req.patient_info or 'Không rõ'}"""
+
+    result = await svc.chat(system, user)
+    if result is None:
+        raise HTTPException(status_code=502, detail="FPT AI API lỗi")
+    try:
+        data = _safe_json_loads(result)
+        return {"success": True, "data": data}
+    except json.JSONDecodeError:
+        return {"success": True, "data": {"suggestions": [], "warnings": [], "raw": result}}
 
 
 # ─────────────────────────────────────────────
@@ -246,7 +338,7 @@ Trả lời JSON (chỉ JSON):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
         return {"success": True, "data": {"chief_complaint": "", "symptoms": result, "history": "", "vital_signs": "", "notes": result, "confidence": 0.5}}
@@ -280,7 +372,7 @@ Trả lời JSON (chỉ JSON):
     if result is None:
         raise HTTPException(status_code=502, detail="FPT AI API lỗi")
     try:
-        data = json.loads(result.strip().replace("```json","").replace("```","").strip())
+        data = _safe_json_loads(result)
         return {"success": True, "data": data}
     except json.JSONDecodeError:
         return {"success": True, "data": {"S": "", "O": "", "A": "", "P": result, "icd10_code": ""}}
@@ -385,8 +477,7 @@ Trả về JSON (chỉ JSON, không text khác):
         return {"roleMap": role_map}
 
     try:
-        clean = result.strip().replace("```json","").replace("```","").strip()
-        parsed = json.loads(clean)
+        parsed = _safe_json_loads(result)
         return {"roleMap": parsed.get("roles", {})}
     except json.JSONDecodeError:
         return {"roleMap": {u["id"]: "unknown" for u in utterances}}

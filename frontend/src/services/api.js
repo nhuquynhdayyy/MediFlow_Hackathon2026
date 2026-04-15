@@ -14,6 +14,7 @@ export const aiDiagnosis    = (data) => api.post('/ai/diagnosis',      data).the
 export const aiTreatment    = (data) => api.post('/ai/treatment',      data).then(r => r.data)
 export const aiPrescription = (data) => api.post('/ai/prescription',   data).then(r => r.data)
 export const aiLabSuggest   = (data) => api.post('/ai/lab-suggestions',data).then(r => r.data)
+export const aiDrugSuggest  = (data) => api.post('/ai/drug-suggestions',data).then(r => r.data)
 export const aiVoiceToEMR   = (data) => api.post('/ai/voice-to-emr',   data).then(r => r.data)
 export const aiSoap         = (data) => api.post('/ai/soap-summary',   data).then(r => r.data)
 export const aiChat         = (data) => api.post('/chat',              data).then(r => r.data)
