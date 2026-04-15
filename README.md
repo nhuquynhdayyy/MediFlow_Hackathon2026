@@ -1,115 +1,227 @@
-<div align="center">
-  <img src="https://img.shields.io/badge/AI-FlowPredict-purple?style=for-the-badge&logo=openai" alt="AI Agent"/>
-  <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/Frontend-Next.js-black?style=for-the-badge&logo=next.js" alt="NextJS"/>
-</div>
+# Navigator AI – Smart Hospital Navigation & FlowPredict
 
-# 🏥 MediFlow: Bệnh viện Điều phối AI Thông minh (FlowPredict Agent)
+`Navigator AI` là hệ thống điều hướng khám bệnh và điều hành bệnh viện theo thời gian thực cho Hackathon 2026.
 
-MediFlow là bộ giải pháp **AI Agent Kép** (Dual-Agent AI) được thiết kế cho Hackathon 2026, nhằm giải quyết bài toán cốt lõi tại các bệnh viện Việt Nam: **Tắc nghẽn quy trình khám chữa bệnh chuyên sâu và phân bổ tài nguyên bác sĩ**.
+Hệ thống có 2 luồng chính:
 
-Thay vì chỉ là chatbot hỏi-đáp, MediFlow tích hợp trực tiếp **Lịch làm việc thực tế, Sơ đồ Tầng/Khoa phòng, Thuật toán Tối ưu hóa Lộ trình (Route Optimizer)** cùng Mô hình Ngôn ngữ Lớn (LLM) từ **FPT AI (Llama 3.3)** để điều phối thời gian thực.
+- **Luồng bệnh nhân**: tối ưu thứ tự đi khám theo tải bệnh viện, theo dõi checklist, cập nhật reroute khi hoàn thành từng bước.
+- **Luồng bệnh viện**: giám sát tải khoa, dự báo tăng/giảm, phát hiện quá tải, hỗ trợ điều phối nhân sự bằng AI.
 
----
-
-## 🚀 Tính năng Cốt lõi (Core Features)
-
-Hệ thống hoạt động song song trên hai nhánh giao tiếp hoàn toàn tự động:
-
-### 🧍‍♂️ 1. Patient Copilot (Luồng Bệnh Nhân - `/triage`)
-- **Phân tích Ý định Giao tiếp Nâng cao**: Tự động parse (bóc tách) các keyword thông dụng như *"răng khôn, tổng quát, siêu âm"* thành các nhóm Khoa chính thức (Răng hàm mặt, Nội tổng quát, Chẩn đoán hình ảnh).
-- **Thuật toán Tối ưu Tuyến đường (Smart Route Optimizer)**: Tự động xếp lịch các khoa *Cận lâm sàng* lên trước để có kết quả đưa về *Khoa xét nghiệm đích*. Tính toán Cost Function dựa trên **tỉ lệ tải hiện tại**, **số lượng bệnh nhân**, **khoảng cách tầng**, và **thời gian chờ ước lượng**.
-- **UX Interactive**: Tạo sơ đồ Timeline Lộ trình dọc (Vertical Stepper) động, bôi đỏ các điểm "Hotbed" để bệnh nhân biết trước việc phải chờ bao lâu.
-
-### ⚕️ 2. Automated Hospital Monitor (Luồng Quản trị Dữ liệu - `/admin` & `/analytics`)
-- **Lưới Cảnh báo Không-Chat (Proactive AI Monitor)**: AI tự quét số liệu các chuyên khoa mỗi phút (Interval Scan), tìm ra các khoa có tải trọng trên `75%`. Thay vì chờ Admin hỏi, AI tự đưa ra "**Checklist Hành động**" (như: *Điều bác sĩ khoa X sang khoa Y, mở thêm máy nội soi*).
-- **Phân cụm Báo cáo Động (Hierarchical Datagrid)**: Báo cáo `Live Analytics` gộp hàng chục nhóm khoa nhỏ trở về các Cụm Chuyên Môn Tức Thời (Khám bệnh & Cấp cứu, Ngoại khoa, Nhi - Sản, Cận Lâm Sàng).
-- **Dự báo 24H (Surge Forecast)**: Kết xuất số ca dự kiến dựa trên mô hình hình thành nút thắt cổ chai thực học tại bệnh viện VN (đỉnh điểm lúc 8-10h sáng).
+> Lưu ý: Logic tối ưu route/load là deterministic ở backend. FPT AI được dùng cho lớp giải thích và chat copilot.
 
 ---
 
-## ⚙️ Cấu trúc Kỹ thuật (Technical Architecture)
+## 1) Công nghệ sử dụng
 
-Dự án được chia thành hai phần rõ rệt (Frontend và Backend), giao tiếp qua REST API (tại Local port `:8003` và Nextjs port `:3000`).
+### Backend
+- Python + FastAPI
+- Pydantic schema
+- Service layer tách riêng (`api`, `services`, `models`)
+- Tích hợp FPT AI (`Llama-3.3-70B-Instruct`)
 
-### 📦 Sơ đồ Tổ chức File/Thư mục
+### Frontend
+- Next.js (App Router) + TypeScript
+- Tailwind CSS
+- UI dashboard + timeline + checklist + mini-map tầng + chat copilot
+
+---
+
+## 2) Cấu trúc thư mục hiện tại
+
 ```text
 MediFlow_Hackathon2026/
-├── backend/                  # Server FastAPI & AI Logic
-│   ├── app/                  
-│   │   ├── api/              
-│   │   │   ├── alerts.py     # AI Monitor Logic & Alert Endpoint
-│   │   │   ├── navigator.py  # Patient Copilot Gateway
-│   │   │   └── utils.py      # Thuật toán Optimizer, Cost Function, Cấu trúc Tầng
-│   │   ├── services/         
-│   │   │   ├── fpt_ai.py     # Gọi API FPT Llama-3.3 
-│   │   │   └── planner.py    # Bóc tách NLP (Intent extraction), ALIAS khoa
-│   ├── main.py               # Chạy ứng dụng FastAPI cốt lõi
-│   ├── test_alerts.py        # Giả lập bơm dữ liệu Stress-test (Siêu quá tải)
-│   └── .env                  # Chứa Keys ẩn (FPT_API_KEY)
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── forecast.py
+│   │   │   ├── hospital.py
+│   │   │   ├── load.py
+│   │   │   ├── optimizer.py
+│   │   │   └── patient.py
+│   │   ├── models/
+│   │   │   ├── requests.py
+│   │   │   └── responses.py
+│   │   └── services/
+│   │       ├── ai_explainer.py
+│   │       ├── fpt_ai.py
+│   │       ├── load_predictor.py
+│   │       ├── mock_data_store.py
+│   │       ├── overload_detector.py
+│   │       └── route_optimizer.py
+│   ├── scripts/
+│   │   └── mock_data_generator.py
+│   ├── main.py
+│   ├── requirements.txt
+│   └── .env
 │
-└── frontend/                 # Client Next.js & UI Components
-    ├── src/
-    │   ├── app/
-    │   │   ├── admin/        # Dashboard AI Điều hành (Hospital CopilotMonitor)
-    │   │   ├── analytics/    # Live Chart KPI & Hierarchical Datagrid
-    │   │   ├── triage/       # Giao diện Chat Patient Copilot (Zalo/App format)
-    │   │   └── layout.tsx    # Giao diện khung định tuyến Sidebar chính
-    │   └── services/
-    │       └── api.ts        # Axios Config kết nối backend
-    ├── package.json          # Dependencies FE (chart.js, react-icons, v.v...)
-    └── tailwind.config.ts    # Cấu hình UI Theme Bệnh viện (Glassmorphism)
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── globals.css
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   └── services/
+│   │       └── api.ts
+│   ├── package.json
+│   └── README.md
+│
+└── README.md
 ```
-
-### 1. Backend (`/backend`)
-- Dựng trên framework **FastAPI** (`python`).
-- `main.py`: Gateway điều phối.
-- `app/api/utils.py` & `app/services/planner.py`: Trái tim điều phối tĩnh. Chứa `DEPT_FLOOR_MAP` (sơ đồ tầng) và thuật toán `Kahn's Sort / Topological Sort` giúp tối ưu lộ trình khám theo điều kiện Y học.
-- `app/api/alerts.py`: Endpoint `/api/alerts/check` được nhúng Engine Prompt Injection phân tích Real-time.
-- LLM Provider: API Key tới **FPT AI LLM (Llama-3.3-70B-Instruct)** với role Play Hospital Operations.
-
-### 2. Frontend (`/frontend`)
-- Dựng trên framework **Next.js 14+ (App Router)** và **Tailwind CSS**.
-- Theme **Glassmorphism**, tuân thủ gam màu Hospital: *Emerald/Teal* (Sức khỏe), *Purple* (Trí tuệ nhân tạo), *Red/Orange* (Cảnh báo).
-- State Management: Quản lý cục bộ dựa án Client Components (`"use client"`). Sử dụng `Chart.js` để render Forecast 24h và Traffic Density bar charts.
 
 ---
 
-## 💻 Hướng dẫn Cài đặt & Khởi chạy (Set up & Run)
+## 3) Luồng nghiệp vụ chính
 
-### 1. Cấu hình Backend (Python)
-Mở terminal, di chuyển vào folder `backend/`:
-```bash
-cd backend
-# Tạo tài nguyên ảo nếu cần: python -m venv venv
-pip install -r requirements.txt
-```
-**Bắt buộc:** Cập nhật tệp `.env` tại thư mục root backend:
+## 3.1 Luồng bệnh nhân (Patient Flow)
+
+1. Lấy order từ mock EMR (`/api/patient/{id}/orders`)
+2. Tối ưu route (`/api/optimize-route`)
+3. Bệnh nhân đồng ý lộ trình
+4. Chuyển sang checklist thực hiện
+5. Tick hoàn thành từng khoa (`/api/patient/{id}/progress`)
+6. Backend tự reroute phần còn lại
+7. Chat hỏi vị trí khoa/phòng/tầng (`/api/patient/{id}/chat`)
+
+UI hỗ trợ:
+- nhóm khoa theo chuyên khoa lớn
+- timeline lộ trình
+- mini-map bệnh viện theo tầng (stacked floors)
+- progress % hoàn thành
+- toast realtime khi reroute
+
+## 3.2 Luồng bệnh viện (Hospital Flow)
+
+1. Lấy tải realtime theo khoa (`/api/department-load`)
+2. Dự báo tải 1–3 giờ (`/api/predict-load`)
+3. Phân tích quá tải + gợi ý (`/api/overload-analysis`)
+4. Operations Copilot cho điều dưỡng/y tá/bác sĩ (`/api/hospital/chat`)
+
+UI hỗ trợ:
+- KPI tải trung bình / khoa đỏ / giờ cao điểm
+- top khoa tải cao
+- forecast overload
+- chat điều hành dùng FPT AI
+
+---
+
+## 4) Danh sách API chính
+
+### Nhóm điều hướng bệnh nhân
+
+- `POST /api/optimize-route`
+  - Input: `patient_id`, `departments[]`, `constraints`, `patient_state`
+  - Output: `optimal_route`, `alternative_route`, `estimated_time`, `time_saved`, `reasoning`
+
+- `POST /api/suggest-time`
+  - So sánh khung giờ đi khám trong lookahead
+
+- `GET /api/patient/{patient_id}/orders`
+  - Lấy order từ mock EMR
+
+- `GET /api/patient/{patient_id}/state`
+  - Lấy trạng thái checklist hiện tại
+
+- `POST /api/patient/{patient_id}/progress`
+  - Cập nhật bước đã hoàn thành + reroute
+
+- `POST /api/patient/{patient_id}/chat`
+  - Chat điều hướng cho bệnh nhân (FPT AI + context khoa/tầng + fallback)
+
+### Nhóm tải và điều hành bệnh viện
+
+- `GET /api/departments`
+- `GET /api/department-load`
+- `GET /api/predict-load`
+- `GET /api/now-vs-later?departments=...&compare_after_hours=2`
+- `GET /api/overload-analysis`
+- `POST /api/hospital/chat`
+  - Chat cho nhân viên vận hành (điều phối nhân sự theo tải/dự báo)
+
+---
+
+## 5) Cấu hình FPT AI
+
+File: `backend/.env`
+
 ```env
-FPT_API_KEY="Key_cua_fpt_cloud"
+FPT_API_KEY="YOUR_FPT_API_KEY"
 FPT_AI_URL="https://mkp-api.fptcloud.com"
 FPT_AI_MODEL="Llama-3.3-70B-Instruct"
 ```
-Khởi chạy Server:
+
+Hệ thống sẽ ưu tiên gọi FPT AI cho:
+- giải thích route
+- chat bệnh nhân
+- chat điều hành bệnh viện
+
+Nếu lỗi mạng hoặc key, backend fallback để không làm hỏng luồng.
+
+---
+
+## 6) Hướng dẫn chạy dự án
+
+## 6.1 Chạy backend
+
 ```bash
-python main.py
-# Server sẽ chạy ở http://localhost:8003
+cd backend
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8003
 ```
 
-### 2. Cấu hình Frontend (Node.js)
-Mở 1 terminal mới, di chuyển vào folder `frontend/`:
+Kiểm tra:
+- Health: [http://localhost:8003/health](http://localhost:8003/health)
+- OpenAPI docs: [http://localhost:8003/docs](http://localhost:8003/docs)
+
+## 6.2 Chạy frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
-# Dashboard sẽ chạy ở http://localhost:3000
+```
+
+Mở: [http://localhost:3000](http://localhost:3000)
+
+## 6.3 (Tuỳ chọn) Generate mock data file
+
+```bash
+cd backend
+python scripts/mock_data_generator.py
 ```
 
 ---
 
-## 🕵️ Data Flow & Lỗi Thường Gặp (Troubleshooting)
-- **Lỗi `10061 Connection Refused`**: Backend chưa được khởi chạy (FastAPI bị tắt), Frontend sẽ rơi vào trạng thái quay tròn vĩnh viễn ở phần "Đang tải biểu đồ". Hãy bật lại `main.py`.
-- **Logic Trả nhầm khoa ở chatbot**: Đã fix bằng cơ chế tách biệt `patient_record` vs `latest_patient_msg` vào intent parser tại luồng Triage.
+## 7) Kịch bản demo gợi ý (Hackathon)
+
+1. Chọn `Patient ID = P001`
+2. Tab `Điều hướng bệnh nhân`:
+   - Chọn khoa / tối ưu route
+   - Đồng ý flow
+   - Tick checklist từng phòng
+   - Hỏi chat: “Đi từ khoa Nhi sang Sản phụ khoa như nào?”
+3. Tab `Đi ngay vs đi sau`:
+   - So sánh route và thời gian
+4. Tab `Điều hành bệnh viện`:
+   - Xem top khoa tải cao và forecast
+   - Hỏi copilot: “2 giờ tới khoa nào cần tăng điều dưỡng?”
 
 ---
-> 💡 *Đội ngũ phát triển: MediFlow Team - Hackathon 2026. Xây dựng vì một tương lai vận hành y tế không điểm nghẽn.*
+
+## 8) Ghi chú vận hành
+
+- Nếu frontend không load dữ liệu, kiểm tra backend có chạy ở `:8003` không.
+- Nếu chat AI trả lời fallback, kiểm tra lại key/url/model trong `.env`.
+- Terminal Windows có thể lỗi in Unicode tiếng Việt khi `print` trực tiếp; API vẫn có thể chạy đúng.
+
+---
+
+## 9) Mục tiêu mở rộng tiếp theo
+
+- Thêm quick-actions điều phối nhân sự (1-click)
+- Thêm mô phỏng before/after khi điều phối nhân lực
+- Kết nối EMR thật thay cho mock data
+- Thêm phân quyền theo vai trò (bác sĩ/điều dưỡng/admin)
+
+---
+
+Được xây dựng cho Hackathon 2026 với định hướng production-ready: rõ luồng, deterministic core, AI copilot thực dụng, UI demo trực quan.
