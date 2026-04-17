@@ -24,6 +24,23 @@ const QUICK_PROMPTS = [
   'Khoa tim mạch ở đâu?',
 ]
 
+const normalizeText = (s = '') =>
+  String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+
+const isVoiceBookingConfirmation = (s = '') => {
+  const t = normalizeText(s)
+  return (
+    (t.includes('dat lich') && (t.includes('dong y') || t.includes('xac nhan') || t.includes('ok') || t.includes('duoc'))) ||
+    t.includes('xac nhan dat lich') ||
+    t.includes('dong y dat lich') ||
+    t === 'dat lich'
+  )
+}
+
 export default function TriagePage() {
   const {
     apiKey, model, triageMessages, addTriageMessage, triageLoading,
@@ -35,6 +52,7 @@ export default function TriagePage() {
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
   const [confirmedBookings, setConfirmedBookings] = useState(new Set())
+  const pendingVoiceBookingRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -68,6 +86,25 @@ export default function TriagePage() {
     return () => synth.removeEventListener('voiceschanged', handleVoicesChanged)
   }, [])
 
+  useEffect(() => {
+    const lastPendingIndex = [...triageMessages]
+      .map((msg, i) => ({ msg, i }))
+      .reverse()
+      .find(({ msg, i }) => msg.bookingData && !confirmedBookings.has(i))
+    pendingVoiceBookingRef.current = lastPendingIndex
+      ? { bookingData: lastPendingIndex.msg.bookingData, msgIndex: lastPendingIndex.i }
+      : null
+  }, [triageMessages, confirmedBookings])
+
+  function handleVoiceBeforeSend(spokenText) {
+    if (!isVoiceBookingConfirmation(spokenText)) return false
+    const pending = pendingVoiceBookingRef.current
+    if (!pending) return false
+    if (confirmedBookings.has(pending.msgIndex)) return true
+    handleConfirmBooking(pending.bookingData, pending.msgIndex)
+    return true
+  }
+
   const {
     voiceState, liveTranscript, aiStreamText, amplitude,
     supported: convSupported,
@@ -78,6 +115,7 @@ export default function TriagePage() {
     model,
     historyRef,
     onNewMessage: addMessageAndSync,
+    onBeforeSend: handleVoiceBeforeSend,
   })
 
   const isVoiceActive = voiceState !== VS.IDLE

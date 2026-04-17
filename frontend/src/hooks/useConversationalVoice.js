@@ -16,6 +16,7 @@ const TTS_WAIT_TIMEOUT_MS = 15000
 // FIX: Grace period sau khi bắt đầu SPEAKING trước khi cho phép interrupt
 // Tránh TTS echo từ loa bị mic bắt lại làm tự-interrupt
 const INTERRUPT_GRACE_MS = 1500
+const LISTEN_RESUME_DELAY_MS = 180
 
 export const VS = {
   IDLE:      'idle',
@@ -41,7 +42,7 @@ const getViVoice = () => {
   return voices.find(v => v.lang.startsWith('vi')) || null
 }
 
-export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage }) {
+export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage, onBeforeSend }) {
   const [voiceState, setVoiceState] = useState(VS.IDLE)
   const [liveTranscript, setLiveTranscript] = useState('')
   const [aiStreamText,   setAiStreamText]   = useState('')
@@ -57,6 +58,8 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
   const streamAbortRef  = useRef(null)
   const pendingTextRef  = useRef('')
   const finalizedRef    = useRef('')
+  const sttPausedRef    = useRef(false)
+  const listenResumeTimerRef = useRef(null)
   // FIX: Track thời điểm bắt đầu SPEAKING để tính grace period
   const speakingStartRef = useRef(0)
 
@@ -191,6 +194,44 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
     setAmplitude(0)
   }, [])
 
+  const clearListenResumeTimer = useCallback(() => {
+    if (listenResumeTimerRef.current) {
+      clearTimeout(listenResumeTimerRef.current)
+      listenResumeTimerRef.current = null
+    }
+  }, [])
+
+  const pauseSTT = useCallback(() => {
+    clearListenResumeTimer()
+    sttPausedRef.current = true
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    clearTimeout(silenceTimerRef.current)
+    setLiveTranscript('')
+    finalizedRef.current = ''
+  }, [clearListenResumeTimer])
+
+  const suspendSTT = useCallback(() => {
+    clearListenResumeTimer()
+    sttPausedRef.current = true
+    clearTimeout(silenceTimerRef.current)
+    setLiveTranscript('')
+    finalizedRef.current = ''
+  }, [clearListenResumeTimer])
+
+  const resumeSTTWithDelay = useCallback((delayMs = LISTEN_RESUME_DELAY_MS) => {
+    clearListenResumeTimer()
+    if (stateRef.current === VS.IDLE) return
+    listenResumeTimerRef.current = setTimeout(() => {
+      if (stateRef.current === VS.IDLE) return
+      sttPausedRef.current = false
+      setState(VS.LISTENING)
+      if (!recognitionRef.current) {
+        startSTTInternalRef.current?.()
+      }
+    }, delayMs)
+  }, [clearListenResumeTimer, setState])
+
   // ════════════════════════════════════════════════════════════════════
   // SEND
   // ════════════════════════════════════════════════════════════════════
@@ -198,7 +239,18 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
     const cleanText = text.trim()
     if (!cleanText || cleanText.length < MIN_CHARS || stateRef.current === VS.THINKING) return
 
+    // Allow parent to intercept special voice commands (e.g. confirm booking)
+    if (typeof onBeforeSend === 'function') {
+      const consumed = onBeforeSend(cleanText)
+      if (consumed) {
+        setLiveTranscript('')
+        finalizedRef.current = ''
+        return
+      }
+    }
+
     console.log('>>> Voice Mode: Gửi:', cleanText)
+    suspendSTT()
     setState(VS.THINKING)
     setLiveTranscript('')
     finalizedRef.current   = ''
@@ -263,10 +315,27 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
         const cleanMsg = accumulated
           .replace(/\[TRIAGE:\d\]/g, '')
           .replace(/\[DEPT:[^\]]+\]/g, '')
+          .replace(/\[BOOK:[^\]]+\]/g, '')
           .trim()
 
+        // Parse booking data tu token [BOOK:dept|date|time|phone]
+        const bookMatch = accumulated.match(/\[BOOK:([^\]]+)\]/)
+        let bookingData = null
+        if (bookMatch) {
+          const parts = bookMatch[1].split('|')
+          if (parts.length >= 4) {
+            bookingData = {
+              department: parts[0].trim(),
+              scheduled_date: parts[1].trim(),
+              scheduled_time: parts[2].trim(),
+              patient_phone: parts[3].trim(),
+              triage_level: level,
+            }
+          }
+        }
+
         onNewMessage?.({ role: 'assistant', content: cleanMsg,
-                         triageLevel: level, department: dept, action })
+                         triageLevel: level, department: dept, action, bookingData })
 
         // FIX 2: Đợi TTS xong với timeout tối đa, tránh interval vô tận
         let waited = 0
@@ -276,7 +345,7 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
           const doneSpeaking = !synthRef.current.speaking && !isSpeakingRef.current
           if (timedOut || doneSpeaking) {
             clearInterval(checkSpeaking)
-            if (stateRef.current !== VS.IDLE) setState(VS.LISTENING)
+            if (stateRef.current !== VS.IDLE) resumeSTTWithDelay()
           }
         }, 300)
       },
@@ -289,15 +358,19 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
           content: `⚠️ Lỗi kết nối: ${err.message || err || 'Không có phản hồi từ AI'}`,
           isError: true,
         })
-        setState(VS.LISTENING)
+        resumeSTTWithDelay(400)
       }
     )
-  }, [apiKey, model, historyRef, onNewMessage, feedTTS, speakChunk, setState])
+  }, [
+    apiKey, model, historyRef, onNewMessage, onBeforeSend,
+    feedTTS, speakChunk, suspendSTT, setState, resumeSTTWithDelay
+  ])
 
   // ════════════════════════════════════════════════════════════════════
   // STT
   // ════════════════════════════════════════════════════════════════════
   const stopSTT = useCallback(() => {
+    sttPausedRef.current = true
     recognitionRef.current?.stop()
     recognitionRef.current = null
     clearTimeout(silenceTimerRef.current)
@@ -306,7 +379,7 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
   }, [])
 
   const restartSTT = useCallback(() => {
-    if (stateRef.current === VS.IDLE) return
+    if (stateRef.current !== VS.LISTENING || sttPausedRef.current) return
     recognitionRef.current?.stop()
     setTimeout(() => { startSTTInternalRef.current?.() }, 100)
   }, [])
@@ -334,7 +407,6 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
       if (fullText.length >= MIN_CHARS) {
         silenceTimerRef.current = setTimeout(() => {
           if (stateRef.current === VS.LISTENING) {
-            rec.stop()
             triggerSend(fullText)
           }
         }, SILENCE_MS)
@@ -343,13 +415,13 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
 
     rec.onerror = (e) => {
       console.warn('STT Error:', e.error)
-      if (e.error === 'no-speech' || e.error === 'network') {
+      if ((e.error === 'no-speech' || e.error === 'network') && stateRef.current === VS.LISTENING && !sttPausedRef.current) {
         restartSTTInternalRef.current?.()
       }
     }
 
     rec.onend = () => {
-      if (stateRef.current !== VS.IDLE) {
+      if (stateRef.current === VS.LISTENING && !sttPausedRef.current) {
         setTimeout(() => { restartSTTInternalRef.current?.() }, 200)
       }
     }
@@ -367,12 +439,14 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
   const activate = useCallback(async () => {
     if (!supported || stateRef.current !== VS.IDLE) return
     loadVoices()
+    sttPausedRef.current = false
     setState(VS.LISTENING)
     await startVAD()
     startSTTInternalRef.current?.()
   }, [supported, startVAD, setState])
 
   const deactivate = useCallback(() => {
+    clearListenResumeTimer()
     stopSTT()
     stopVAD()
     stopSpeaking()
@@ -381,7 +455,7 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
     setLiveTranscript('')
     setAiStreamText('')
     setAmplitude(0)
-  }, [stopSTT, stopVAD, stopSpeaking, setState])
+  }, [stopSTT, stopVAD, stopSpeaking, setState, clearListenResumeTimer])
 
   useEffect(() => () => deactivate(), [deactivate])
 
