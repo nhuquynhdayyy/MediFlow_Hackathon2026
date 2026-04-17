@@ -2,176 +2,199 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import { toast } from 'react-hot-toast'
 import { Loader2, Sparkles, Save, Printer, QrCode, History } from 'lucide-react'
-import { aiDiagnosis, aiTreatment, aiSoap, aiPrescription, aiLabSuggest, saveEMR, fetchHistory } from '../services/api'
+import { aiDiagnosis, aiTreatment, aiSoap, saveEMR, fetchHistory } from '../services/api'
 import VoiceRecorder from './VoiceRecorder'
 import PrescriptionTab from './PrescriptionTab'
 import LabTab from './LabTab'
 import QRModal from './QRModal'
 import HistoryModal from './HistoryModal'
 
-const TABS = ['Hồ sơ bệnh án', 'Đơn thuốc', 'Xét nghiệm']
+const TABS = ['Ho so benh an', 'Don thuoc', 'Xet nghiem']
 
 export default function EMRForm() {
-  const { activePatient, emr, setEmrField, setEmr, addChatMessage, loading, setLoading } = useStore()
+  const { activePatient, emr, setEmrField, addChatMessage, loading, setLoading } = useStore()
   const [tab, setTab] = useState(0)
   const [showQR, setShowQR] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState([])
 
-  // Build context object — KHÔNG có api_key
   const ctx = () => ({
-    patient_name:      activePatient?.name || '',
-    patient_info:      `${activePatient?.age || ''} tuổi · ${activePatient?.gender || ''} · Phòng ${activePatient?.room || ''}`,
-    chief_complaint:   emr.chief_complaint,
-    symptoms:          emr.symptoms,
-    history:           emr.history,
+    patient_name: activePatient?.name || '',
+    patient_info: `${activePatient?.age || ''} tuoi - ${activePatient?.gender || ''} - Phong ${activePatient?.room || ''}`,
+    chief_complaint: emr.chief_complaint,
+    symptoms: emr.symptoms,
+    history: emr.history,
     current_diagnosis: emr.diagnosis,
-    treatment_plan:    emr.treatment_plan,
+    treatment_plan: emr.treatment_plan,
   })
 
   const requirePatient = () => {
-    if (!activePatient) { toast.error('Chọn bệnh nhân trước'); return false }
+    if (!activePatient) {
+      toast.error('Chon benh nhan truoc')
+      return false
+    }
     return true
   }
 
   const handleDiagnosis = async () => {
     if (!requirePatient()) return
     setLoading('diagnosis', true)
-    addChatMessage({ role: 'assistant', text: '🔍 Đang phân tích triệu chứng...', loading: true })
+    addChatMessage({ role: 'assistant', text: 'Dang phan tich trieu chung...', loading: true })
     try {
       const res = await aiDiagnosis(ctx())
       const d = res.data
-      const text = `**Chẩn đoán sơ bộ:** ${d.primary_diagnosis}\n\n**Phân biệt:** ${d.differential?.join(', ')}\n\n**Mức độ khẩn:** ${d.urgency}\n\n**Lý giải:** ${d.reasoning}`
+      const text = `**Chan doan so bo:** ${d.primary_diagnosis}\n\n**Phan biet:** ${d.differential?.join(', ')}\n\n**Muc do khan:** ${d.urgency}\n\n**Ly giai:** ${d.reasoning}`
       addChatMessage({ role: 'assistant', text, loading: false })
       if (d.primary_diagnosis && !emr.diagnosis) setEmrField('diagnosis', d.primary_diagnosis)
-      toast.success('Đã phân tích chẩn đoán')
+      toast.success('Da phan tich chan doan')
     } catch (e) {
-      addChatMessage({ role: 'assistant', text: `Lỗi: ${e.message}`, loading: false })
-      toast.error('Lỗi AI — kiểm tra backend')
-    } finally { setLoading('diagnosis', false) }
+      addChatMessage({ role: 'assistant', text: `Loi: ${e.message}`, loading: false })
+      toast.error('Loi AI')
+    } finally {
+      setLoading('diagnosis', false)
+    }
   }
 
   const handleTreatment = async () => {
     if (!requirePatient()) return
     setLoading('treatment', true)
-    addChatMessage({ role: 'assistant', text: '💊 Đang tra cứu phác đồ...', loading: true })
+    addChatMessage({ role: 'assistant', text: 'Dang tra cuu phac do...', loading: true })
     try {
       const res = await aiTreatment(ctx())
       const d = res.data
-      const meds = d.medications?.map(m => `• ${m.name} ${m.dose} — ${m.frequency} × ${m.duration}`).join('\n') || ''
-      const text = `**Phác đồ điều trị:**\n${meds}\n\n**Theo dõi:** ${d.monitoring?.join(', ')}\n\n**Tái khám:** ${d.follow_up}`
+      const meds = d.medications?.map(m => `- ${m.name} ${m.dose} - ${m.frequency} x ${m.duration}`).join('\n') || ''
+      const text = `**Phac do dieu tri:**\n${meds}\n\n**Theo doi:** ${d.monitoring?.join(', ')}\n\n**Tai kham:** ${d.follow_up}`
       addChatMessage({ role: 'assistant', text, loading: false })
       if (!emr.treatment_plan && meds) setEmrField('treatment_plan', meds)
-      toast.success('Đã lấy phác đồ')
+      toast.success('Da lay phac do')
     } catch (e) {
-      addChatMessage({ role: 'assistant', text: `Lỗi: ${e.message}`, loading: false })
-      toast.error('Lỗi AI')
-    } finally { setLoading('treatment', false) }
+      addChatMessage({ role: 'assistant', text: `Loi: ${e.message}`, loading: false })
+      toast.error('Loi AI')
+    } finally {
+      setLoading('treatment', false)
+    }
   }
 
   const handleSOAP = async () => {
     if (!requirePatient()) return
     setLoading('soap', true)
-    addChatMessage({ role: 'assistant', text: '📋 Đang tóm tắt SOAP...', loading: true })
+    addChatMessage({ role: 'assistant', text: 'Dang tom tat SOAP...', loading: true })
     try {
       const res = await aiSoap(ctx())
       const d = res.data
-      const text = `**S:** ${d.S}\n\n**O:** ${d.O}\n\n**A:** ${d.A}\n\n**P:** ${d.P}\n\n**ICD-10:** ${d.icd10_code || '—'}`
+      const text = `**S:** ${d.S}\n\n**O:** ${d.O}\n\n**A:** ${d.A}\n\n**P:** ${d.P}\n\n**ICD-10:** ${d.icd10_code || '-'}` 
       addChatMessage({ role: 'assistant', text, loading: false })
       setEmrField('soap', d)
-      toast.success('Đã tóm tắt SOAP')
+      toast.success('Da tom tat SOAP')
     } catch (e) {
-      addChatMessage({ role: 'assistant', text: `Lỗi: ${e.message}`, loading: false })
-      toast.error('Lỗi AI')
-    } finally { setLoading('soap', false) }
+      addChatMessage({ role: 'assistant', text: `Loi: ${e.message}`, loading: false })
+      toast.error('Loi AI')
+    } finally {
+      setLoading('soap', false)
+    }
   }
 
   const handleSave = async () => {
-    if (!activePatient) { toast.error('Chọn bệnh nhân trước'); return }
+    if (!activePatient) {
+      toast.error('Chon benh nhan truoc')
+      return
+    }
     setLoading('save', true)
     try {
       const res = await saveEMR({
-        patient_id: activePatient.id, patient_name: activePatient.name,
-        chief_complaint: emr.chief_complaint, symptoms: emr.symptoms,
-        history: emr.history, diagnosis: emr.diagnosis,
-        treatment_plan: emr.treatment_plan, prescriptions: emr.prescriptions || [],
+        patient_id: activePatient.id,
+        patient_name: activePatient.name,
+        chief_complaint: emr.chief_complaint,
+        symptoms: emr.symptoms,
+        history: emr.history,
+        diagnosis: emr.diagnosis,
+        treatment_plan: emr.treatment_plan,
+        prescriptions: emr.prescriptions || [],
         follow_up_date: emr.follow_up_date || '',
-        lab_orders: emr.lab_orders || [], notes: emr.notes || '',
-        soap: emr.soap || null, doctor_id: 'DR001',
+        lab_orders: emr.lab_orders || [],
+        notes: emr.notes || '',
+        soap: emr.soap || null,
+        doctor_id: 'DR001',
       })
-      toast.success(`Hồ sơ đã lưu! Mã EMR: ${res.emr_id}`)
-    } catch { toast.error('Lỗi lưu hồ sơ') }
-    finally { setLoading('save', false) }
+      toast.success(`Ho so da luu. Ma EMR: ${res.emr_id}`)
+    } catch {
+      toast.error('Loi luu ho so')
+    } finally {
+      setLoading('save', false)
+    }
   }
 
   const handleHistory = async () => {
     if (!activePatient) return
-    try { setHistory(await fetchHistory(activePatient.id)) }
-    catch { setHistory([]) }
+    try {
+      setHistory(await fetchHistory(activePatient.id))
+    } catch {
+      setHistory([])
+    }
     setShowHistory(true)
   }
 
   const isL = (k) => !!loading[k]
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white">
-      {/* Patient header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+    <div className="flex-1 flex flex-col overflow-hidden panel-shell-strong rounded-[30px]">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-r from-white via-white to-teal-50/70">
         {activePatient ? (
           <>
-            <div className="w-9 h-9 rounded-full bg-teal-50 flex items-center justify-center text-sm font-medium text-teal-600 shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-sm font-semibold text-white shrink-0 shadow-lg shadow-teal-600/20">
               {activePatient.name.split(' ').map(w => w[0]).slice(-2).join('')}
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-900 truncate">{activePatient.name}</div>
-              <div className="text-xs text-gray-500">{activePatient.age} tuổi · {activePatient.gender} · Phòng {activePatient.room} · #{activePatient.visit_no}</div>
+              <div className="text-base font-semibold text-gray-900 truncate">{activePatient.name}</div>
+              <div className="text-xs text-gray-500">{activePatient.age} tuoi - {activePatient.gender} - Phong {activePatient.room} - #{activePatient.visit_no}</div>
             </div>
             <div className="ml-auto flex gap-2 shrink-0">
-              <button onClick={handleHistory} className="btn-ghost text-xs"><History size={13} /> Bệnh án cũ</button>
-              <button onClick={() => setShowQR(true)} className="btn-ghost text-xs"><QrCode size={13} /> QR Thanh toán</button>
+              <button onClick={handleHistory} className="btn-ghost text-xs"><History size={13} /> Benh an cu</button>
+              <button onClick={() => setShowQR(true)} className="btn-ghost text-xs"><QrCode size={13} /> QR thanh toan</button>
               <button onClick={handleSave} disabled={isL('save')} className="btn-primary text-xs">
-                {isL('save') ? <Loader2 size={13} className="spin" /> : <Save size={13} />} Lưu hồ sơ
+                {isL('save') ? <Loader2 size={13} className="spin" /> : <Save size={13} />} Luu ho so
               </button>
             </div>
           </>
         ) : (
-          <div className="text-sm text-gray-400">← Chọn bệnh nhân từ danh sách bên trái</div>
+          <div className="text-sm text-gray-400">Chon benh nhan tu danh sach ben trai</div>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-100 px-4 shrink-0">
+      <div className="flex border-b border-slate-100 px-5 shrink-0 bg-white/60">
         {TABS.map((t, i) => (
-          <button key={t} onClick={() => setTab(i)}
-            className={`text-xs px-3 py-2.5 border-b-2 transition-colors ${tab === i ? 'border-teal-400 text-teal-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          <button
+            key={t}
+            onClick={() => setTab(i)}
+            className={`text-xs px-4 py-3 border-b-2 transition-colors ${tab === i ? 'border-teal-600 text-teal-700 font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
             {t}
           </button>
         ))}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-5 bg-gradient-to-b from-white/70 to-slate-50/40">
         {tab === 0 && (
           <div className="space-y-3">
-            <EMRField label="Lý do khám"           value={emr.chief_complaint} onChange={v => setEmrField('chief_complaint', v)} rows={2} />
-            <EMRField label="Tiền sử bệnh / thuốc đang dùng" value={emr.history} onChange={v => setEmrField('history', v)} rows={2} />
-            <EMRField label="Triệu chứng hiện tại (sinh hiệu, mô tả chi tiết)" value={emr.symptoms} onChange={v => setEmrField('symptoms', v)} rows={3} />
-            <EMRField label="Chẩn đoán sơ bộ" value={emr.diagnosis} onChange={v => setEmrField('diagnosis', v)} rows={2} placeholder="Nhấn 'AI gợi ý chẩn đoán' để điền tự động..." />
-            <EMRField label="Kế hoạch điều trị" value={emr.treatment_plan} onChange={v => setEmrField('treatment_plan', v)} rows={3} placeholder="Nhấn 'AI đề xuất điều trị' để điền tự động..." />
-            <DateField label="Hẹn ngày tái khám" value={emr.follow_up_date} onChange={v => setEmrField('follow_up_date', v)} />
-            <EMRField label="Ghi chú bác sĩ"   value={emr.notes}          onChange={v => setEmrField('notes', v)} rows={2} />
+            <EMRField label="Ly do kham" value={emr.chief_complaint} onChange={v => setEmrField('chief_complaint', v)} rows={2} />
+            <EMRField label="Tien su benh / thuoc dang dung" value={emr.history} onChange={v => setEmrField('history', v)} rows={2} />
+            <EMRField label="Trieu chung hien tai (sinh hieu, mo ta chi tiet)" value={emr.symptoms} onChange={v => setEmrField('symptoms', v)} rows={3} />
+            <EMRField label="Chan doan so bo" value={emr.diagnosis} onChange={v => setEmrField('diagnosis', v)} rows={2} placeholder="Nhan AI goi y chan doan de dien tu dong..." />
+            <EMRField label="Ke hoach dieu tri" value={emr.treatment_plan} onChange={v => setEmrField('treatment_plan', v)} rows={3} placeholder="Nhan AI de xuat dieu tri de dien tu dong..." />
+            <DateField label="Hen ngay tai kham" value={emr.follow_up_date} onChange={v => setEmrField('follow_up_date', v)} />
+            <EMRField label="Ghi chu bac si" value={emr.notes} onChange={v => setEmrField('notes', v)} rows={3} />
             {emr.soap && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                <div className="text-xs font-medium text-blue-700 mb-2">Tóm tắt SOAP (AI)</div>
+              <div className="bg-gradient-to-br from-sky-50 to-white border border-sky-100 rounded-2xl p-4 shadow-sm">
+                <div className="text-xs font-medium text-sky-700 mb-2">Tom tat SOAP (AI)</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {['S','O','A','P'].map(k => (
-                    <div key={k} className="bg-white rounded-lg p-2">
-                      <div className="text-xs font-medium text-blue-600">{k}</div>
+                  {['S', 'O', 'A', 'P'].map(k => (
+                    <div key={k} className="bg-white rounded-xl p-3 border border-sky-100/70">
+                      <div className="text-xs font-medium text-sky-600">{k}</div>
                       <div className="text-xs text-gray-600 mt-0.5 line-clamp-2">{emr.soap[k]}</div>
                     </div>
                   ))}
                 </div>
-                {emr.soap.icd10_code && <div className="text-xs text-blue-600 mt-1.5">ICD-10: {emr.soap.icd10_code}</div>}
+                {emr.soap.icd10_code && <div className="text-xs text-sky-700 mt-2">ICD-10: {emr.soap.icd10_code}</div>}
               </div>
             )}
           </div>
@@ -182,17 +205,16 @@ export default function EMRForm() {
 
       <VoiceRecorder />
 
-      {/* Action bar */}
-      <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-t border-gray-100 bg-gray-50 shrink-0">
-        <AIBtn label="AI gợi ý chẩn đoán" loading={isL('diagnosis')} onClick={handleDiagnosis} />
-        <AIBtn label="AI đề xuất điều trị" loading={isL('treatment')} onClick={handleTreatment} />
-        <AIBtn label="Tóm tắt SOAP"        loading={isL('soap')}      onClick={handleSOAP} />
+      <div className="flex items-center gap-2 flex-wrap px-5 py-4 border-t border-slate-100 bg-white/80 shrink-0">
+        <AIBtn label="AI goi y chan doan" loading={isL('diagnosis')} onClick={handleDiagnosis} />
+        <AIBtn label="AI de xuat dieu tri" loading={isL('treatment')} onClick={handleTreatment} />
+        <AIBtn label="Tom tat SOAP" loading={isL('soap')} onClick={handleSOAP} />
         <div className="ml-auto">
-          <button onClick={() => window.print()} className="btn-ghost text-xs"><Printer size={13} /> In hồ sơ</button>
+          <button onClick={() => window.print()} className="btn-ghost text-xs"><Printer size={13} /> In ho so</button>
         </div>
       </div>
 
-      {showQR      && <QRModal patient={activePatient} onClose={() => setShowQR(false)} />}
+      {showQR && <QRModal patient={activePatient} onClose={() => setShowQR(false)} />}
       {showHistory && <HistoryModal history={history} onClose={() => setShowHistory(false)} />}
     </div>
   )
@@ -200,28 +222,36 @@ export default function EMRForm() {
 
 function EMRField({ label, value, onChange, rows = 2, placeholder }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-xl p-3">
-      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5">{label}</label>
-      <textarea rows={rows} value={value} onChange={e => onChange(e.target.value)}
+    <div className="bg-white/90 border border-slate-100 rounded-2xl p-4 shadow-sm">
+      <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-[0.18em] mb-2">{label}</label>
+      <textarea
+        rows={rows}
+        value={value}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full text-sm text-gray-800 bg-transparent outline-none resize-none placeholder-gray-300 leading-relaxed" />
+        className="w-full text-sm text-gray-800 bg-transparent outline-none resize-none placeholder-gray-300 leading-relaxed"
+      />
     </div>
   )
 }
 
 function AIBtn({ label, loading, onClick }) {
   return (
-    <button onClick={onClick} disabled={loading}
-      className="flex items-center gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-100 rounded-lg px-3 py-1.5 transition disabled:opacity-50">
-      {loading ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{label}
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="flex items-center gap-1.5 text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-100 rounded-xl px-3.5 py-2 transition disabled:opacity-50 shadow-sm"
+    >
+      {loading ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}
+      {label}
     </button>
   )
 }
 
 function DateField({ label, value, onChange }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-xl p-3">
-      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5">{label}</label>
+    <div className="bg-white/90 border border-slate-100 rounded-2xl p-4 shadow-sm">
+      <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-[0.18em] mb-2">{label}</label>
       <input
         type="date"
         value={value || ''}

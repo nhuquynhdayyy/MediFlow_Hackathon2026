@@ -70,7 +70,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      <div className="flex flex-col h-screen overflow-hidden">
         <SettingsBar />
         <Routes>
           <Route path="/" element={<DocAssistPage />} />
