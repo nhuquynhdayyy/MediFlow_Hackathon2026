@@ -115,7 +115,7 @@ async def triage_chat_stream(req: TriageChatRequest):
         try:
             async for chunk in triage_service.chat_stream(
                 message=req.message,
-                history=req.history,
+                history=[{"role": h.role, "content": h.content} for h in req.history],
                 api_key=api_key,
                 model=req.model,
             ):
