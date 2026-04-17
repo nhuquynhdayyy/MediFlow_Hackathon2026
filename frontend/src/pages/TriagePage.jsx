@@ -7,6 +7,7 @@ import { triageChatStream, createAppointment } from '../services/api'
 import { useVoice } from '../hooks/useVoice'
 import { useConversationalVoice, VS } from '../hooks/useConversationalVoice'
 import VoiceConversationOverlay from '../components/VoiceConversationOverlay'
+import { QRCodeSVG } from 'qrcode.react'
 
 const LEVEL_CONFIG = {
   3: { label: '🔴 NGUY KỊCH', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: <AlertTriangle size={14} /> },
@@ -29,11 +30,13 @@ export default function TriagePage() {
     setTriageLoading, triageSession, setTriageSession, clearTriage, user,
   } = useStore()
 
+  const [checkinQR, setCheckinQR] = useState(null) // { appointment_id, department, date, time, phone }
+
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
   const [confirmedBookings, setConfirmedBookings] = useState(new Set())
   const bottomRef = useRef(null)
-  const inputRef  = useRef(null)
+  const inputRef = useRef(null)
 
   const { isRecording, transcript, start: startRec, stop: stopRec, reset: resetRec, supported: voiceSupported } =
     useVoice({ onTranscriptUpdate: (t) => setInput(t) })
@@ -134,7 +137,7 @@ export default function TriagePage() {
           setTriageSession(sessionId)
         }
         let level = null, dept = null, action = null
-        if (accumulated.includes('[TRIAGE:3]'))      { level = 3; action = 'emergency' }
+        if (accumulated.includes('[TRIAGE:3]')) { level = 3; action = 'emergency' }
         else if (accumulated.includes('[TRIAGE:2]')) { level = 2; action = 'book' }
         else if (accumulated.includes('[TRIAGE:1]')) { level = 1; action = 'home' }
         const deptMatch = accumulated.match(/\[DEPT:([^\]]+)\]/)
@@ -171,7 +174,7 @@ export default function TriagePage() {
       },
     )
   }, [input, apiKey, model, triageLoading, triageSession,
-      addMessageAndSync, setTriageLoading, setTriageSession, resetRec])
+    addMessageAndSync, setTriageLoading, setTriageSession, resetRec])
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
@@ -191,9 +194,19 @@ export default function TriagePage() {
         session_id: triageSession,
       })
       setConfirmedBookings(prev => new Set([...prev, msgIndex]))
+      const apptId = res.data?.appointment_id || 'N/A'
       addMessageAndSync({
         role: 'assistant',
-        content: `✅ Đặt lịch thành công!\n📋 Mã lịch hẹn: ${res.data?.appointment_id || 'N/A'}\n🏥 ${bookingData.department}\n📅 ${bookingData.scheduled_time} ngày ${bookingData.scheduled_date}\n📞 SĐT: ${bookingData.patient_phone}`,
+        content: `✅ Đặt lịch thành công!\n📋 Mã lịch hẹn: ${apptId}\n🏥 ${bookingData.department}\n📅 ${bookingData.scheduled_time} ngày ${bookingData.scheduled_date}\n📞 SĐT: ${bookingData.patient_phone}`,
+      })
+      // Hiện QR Check-in
+      setCheckinQR({
+        appointment_id: apptId,
+        department: bookingData.department,
+        scheduled_date: bookingData.scheduled_date,
+        scheduled_time: bookingData.scheduled_time,
+        patient_phone: bookingData.patient_phone,
+        patient_name: user?.email || '',
       })
     } catch (e) {
       addMessageAndSync({
@@ -243,15 +256,13 @@ export default function TriagePage() {
             <div className="border-t border-slate-100 pt-3">
               <button
                 onClick={handleVoiceButton}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                  isVoiceActive
-                    ? 'bg-red-50 text-red-600 border border-red-200'
-                    : 'bg-gradient-to-r from-sky-50 to-teal-50 text-sky-700 border border-sky-200 hover:from-sky-100 hover:to-teal-100'
-                }`}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isVoiceActive
+                  ? 'bg-red-50 text-red-600 border border-red-200'
+                  : 'bg-gradient-to-r from-sky-50 to-teal-50 text-sky-700 border border-sky-200 hover:from-sky-100 hover:to-teal-100'
+                  }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-none ${
-                  isVoiceActive ? 'bg-red-500' : 'bg-gradient-to-br from-sky-500 to-teal-500'
-                }`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-none ${isVoiceActive ? 'bg-red-500' : 'bg-gradient-to-br from-sky-500 to-teal-500'
+                  }`}>
                   <Radio size={14} className={`text-white ${isVoiceActive ? 'animate-pulse' : ''}`} />
                 </div>
                 <div className="text-left">
@@ -296,11 +307,10 @@ export default function TriagePage() {
               {convSupported && (
                 <button
                   onClick={handleVoiceButton}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    isVoiceActive
-                      ? 'bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30'
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300 hover:text-sky-600'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${isVoiceActive
+                    ? 'bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-sky-300 hover:text-sky-600'
+                    }`}
                 >
                   <Radio size={12} className={isVoiceActive ? 'animate-pulse' : ''} />
                   {isVoiceActive ? 'Voice đang bật' : 'Bật Voice'}
@@ -385,11 +395,10 @@ export default function TriagePage() {
                 <button
                   onClick={isRecording ? stopRec : startRec}
                   title="Ghi âm (push-to-talk)"
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors flex-none ${
-                    isRecording
-                      ? 'bg-red-500 hover:bg-red-600 text-white'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors flex-none ${isRecording
+                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    }`}
                 >
                   {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
                 </button>
@@ -405,6 +414,61 @@ export default function TriagePage() {
           </div>
         </div>
       </div>
+
+      {/* ── QR Check-in Modal ── */}
+      {checkinQR && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl text-center animate-in">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-sky-500 flex items-center justify-center mx-auto mb-4">
+              <Calendar size={22} className="text-white" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Đặt lịch thành công!</h3>
+            <p className="text-xs text-slate-400 mb-5">Quét mã QR này khi đến bệnh viện để check-in</p>
+
+            <div className="bg-white border-2 border-slate-100 rounded-xl p-4 inline-block mb-5">
+              <QRCodeSVG
+                value={JSON.stringify({
+                  type: 'mediflow_checkin',
+                  id: checkinQR.appointment_id,
+                  dept: checkinQR.department,
+                  date: checkinQR.scheduled_date,
+                  time: checkinQR.scheduled_time,
+                  phone: checkinQR.patient_phone,
+                })}
+                size={180}
+                level="H"
+                includeMargin={false}
+              />
+            </div>
+
+            <div className="text-left bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Mã lịch hẹn</span>
+                <span className="font-mono font-bold text-slate-700 text-xs">{checkinQR.appointment_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Chuyên khoa</span>
+                <span className="font-semibold text-slate-700">{checkinQR.department}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Thời gian</span>
+                <span className="font-semibold text-teal-600">{checkinQR.scheduled_time} — {checkinQR.scheduled_date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">SĐT</span>
+                <span className="font-semibold text-slate-700">{checkinQR.patient_phone}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setCheckinQR(null)}
+              className="w-full py-3 bg-gradient-to-r from-teal-500 to-sky-500 text-white rounded-xl font-bold hover:from-teal-600 hover:to-sky-600 transition-all shadow-lg shadow-teal-500/20"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -439,11 +503,10 @@ function MessageBubble({ msg, onBook }) {
             {msg.department && ` · ${msg.department}`}
           </div>
         )}
-        <div className={`border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm ${
-          msg.isError ? 'bg-red-50 border-red-200' :
+        <div className={`border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm ${msg.isError ? 'bg-red-50 border-red-200' :
           msg.triageLevel === 3 ? 'bg-red-50 border-red-100' :
-          'bg-white border-slate-200'
-        }`}>
+            'bg-white border-slate-200'
+          }`}>
           <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
           {onBook && msg.bookingData && (
             <button
