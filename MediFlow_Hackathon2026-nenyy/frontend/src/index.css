@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+:root {
+  --bg-base: #eef4f1;
+  --bg-panel: rgba(255, 255, 255, 0.78);
+  --bg-panel-strong: rgba(255, 255, 255, 0.92);
+  --stroke-soft: rgba(15, 23, 42, 0.08);
+  --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.08);
+  --shadow-panel: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+body {
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(42, 157, 143, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(244, 162, 97, 0.14), transparent 26%),
+    linear-gradient(180deg, #f7fbf8 0%, var(--bg-base) 100%);
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  color: #0f172a;
+}
+
+#root {
+  height: 100vh;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+textarea { resize: none; }
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.recording-pulse { animation: pulse-rec 1.2s infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+.prose-sm p { margin: 0 0 0.5rem; }
+.prose-sm strong { font-weight: 500; }
+
+@layer components {
+  .btn-primary {
+    @apply bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-3.5 py-2 text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer border border-teal-700/20 shadow-sm;
+  }
+  .btn-ghost {
+    @apply bg-white/80 hover:bg-white text-slate-600 border border-slate-200 rounded-xl px-3.5 py-2 text-xs transition flex items-center gap-1.5 cursor-pointer shadow-sm;
+  }
+  .btn-ai {
+    @apply bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl px-3.5 py-2 text-xs transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm;
+  }
+  .panel-shell {
+    background: var(--bg-panel);
+    border: 1px solid var(--stroke-soft);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(18px);
+  }
+  .panel-shell-strong {
+    background: var(--bg-panel-strong);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(20px);
+  }
+}

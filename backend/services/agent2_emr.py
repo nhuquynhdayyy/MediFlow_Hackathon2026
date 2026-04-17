@@ -1,0 +1,377 @@
+"""
+Agent 2 EMR service isolated from Agent 1 logic while still mapping to the same DB.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Optional
+from uuid import uuid4
+
+try:
+    from database_firebase import db as firebase_db  # type: ignore
+
+    FIREBASE_AVAILABLE = True
+except Exception:
+    firebase_db = None
+    FIREBASE_AVAILABLE = False
+
+ROOM_BY_DEPARTMENT = {
+    "Khoa Tim mach": "K1",
+    "Khoa Than kinh": "K2",
+    "Khoa Tieu hoa": "K1",
+    "Khoa Noi tong quat": "K3",
+    "Khoa Nhi": "K4",
+    "Khoa Mat": "K2",
+    "Khoa Tai Mui Hong": "K3",
+    "Khoa Da lieu": "K4",
+}
+
+MOCK_PATIENTS = [
+    {
+        "id": "P001",
+        "name": "Nguyen Van An",
+        "age": 65,
+        "gender": "Nam",
+        "room": "K1",
+        "visit_no": "2847",
+        "chief_complaint": "Dau nguc kem kho tho xuat hien tu 2 ngay nay, dau tang khi gang suc",
+        "history": "THA do II (dieu tri Amlodipine 5mg), DTD type 2",
+        "symptoms": "Dau nguc trai lan vai trai, muc do 7/10. SpO2: 96%. HA: 155/95 mmHg. Nhip tim: 92 bpm. Kho tho khi gang suc. Khong sot.",
+        "triage_severity": "high",
+        "triage_source": "Agent1",
+        "arrived_at": "2026-04-13T08:15:00",
+        "diagnosis": "",
+        "treatment_plan": "",
+        "current_medications": ["Amlodipine 5mg", "Metformin 500mg"],
+        "allergies": "",
+    },
+    {
+        "id": "P002",
+        "name": "Tran Thi Bich",
+        "age": 42,
+        "gender": "Nu",
+        "room": "K2",
+        "visit_no": "2848",
+        "chief_complaint": "Dau dau vung tran, chong mat khi dung day",
+        "history": "Khong co tien su benh nen",
+        "symptoms": "Dau dau am i 3/10, chong mat tu the. HA: 110/70. Khong sot. Khong buon non.",
+        "triage_severity": "medium",
+        "triage_source": "Agent1",
+        "arrived_at": "2026-04-13T08:40:00",
+        "diagnosis": "",
+        "treatment_plan": "",
+        "current_medications": [],
+        "allergies": "",
+    },
+    {
+        "id": "P003",
+        "name": "Le Hoang Minh",
+        "age": 28,
+        "gender": "Nam",
+        "room": "K1",
+        "visit_no": "2849",
+        "chief_complaint": "Ho lau ngay khoang 3 tuan, sot nhe buoi chieu",
+        "history": "Khong co tien su",
+        "symptoms": "Ho khan, doi khi co dom. Sot nhe 37.8C buoi chieu. Gay 2kg trong 1 thang.",
+        "triage_severity": "low",
+        "triage_source": "Agent1",
+        "arrived_at": "2026-04-13T09:05:00",
+        "diagnosis": "",
+        "treatment_plan": "",
+        "current_medications": [],
+        "allergies": "",
+    },
+    {
+        "id": "P004",
+        "name": "Pham Thi Lan",
+        "age": 55,
+        "gender": "Nu",
+        "room": "K3",
+        "visit_no": "2850",
+        "chief_complaint": "Tai kham dai thao duong dinh ky 3 thang",
+        "history": "DTD type 2 (Metformin 500mg x2), THA nhe",
+        "symptoms": "HbA1c: 7.2% (thang truoc 7.8%). HA: 130/80. Khong trieu chung moi.",
+        "triage_severity": "low",
+        "triage_source": "Agent1",
+        "arrived_at": "2026-04-13T09:20:00",
+        "diagnosis": "",
+        "treatment_plan": "",
+        "current_medications": ["Metformin 500mg", "Amlodipine 5mg"],
+        "allergies": "Penicillin",
+    },
+]
+
+MOCK_HISTORY = {
+    "P001": [
+        {
+            "visit_date": "2026-01-15",
+            "chief_complaint": "Kiem tra huyet ap dinh ky",
+            "diagnosis": "THA do II on dinh",
+            "treatment": "Tiep tuc Amlodipine 5mg",
+            "follow_up_date": "2026-04-15",
+            "doctor": "BS. Nguyen Minh Tuan",
+        }
+    ],
+    "P004": [
+        {
+            "visit_date": "2026-01-13",
+            "chief_complaint": "Tai kham DTD",
+            "diagnosis": "DTD type 2, HbA1c 7.8%",
+            "treatment": "Tang lieu Metformin, che do an",
+            "follow_up_date": "2026-04-13",
+            "doctor": "BS. Le Thu Ha",
+        }
+    ],
+}
+
+
+def _parse_date(value) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if hasattr(value, "to_datetime"):
+        try:
+            return value.to_datetime()
+        except Exception:
+            return None
+    if isinstance(value, str):
+        normalized = value.replace("Z", "+00:00")
+        for candidate in (normalized, normalized.replace(" ", "T")):
+            try:
+                return datetime.fromisoformat(candidate)
+            except ValueError:
+                continue
+    return None
+
+
+def _iso_or_empty(value) -> str:
+    parsed = _parse_date(value)
+    return parsed.isoformat() if parsed else (str(value) if value else "")
+
+
+def _to_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def _norm_key(value: str) -> str:
+    return (
+        str(value or "")
+        .lower()
+        .replace("đ", "d")
+        .replace("Đ", "D")
+        .replace("ơ", "o")
+        .replace("ô", "o")
+        .replace("á", "a")
+        .replace("à", "a")
+        .replace("ả", "a")
+        .replace("ã", "a")
+        .replace("ạ", "a")
+        .replace("â", "a")
+        .replace("ă", "a")
+        .replace("ê", "e")
+        .replace("é", "e")
+        .replace("è", "e")
+        .replace("í", "i")
+        .replace("ì", "i")
+        .replace("ó", "o")
+        .replace("ò", "o")
+        .replace("ú", "u")
+        .replace("ù", "u")
+        .replace("ư", "u")
+    )
+
+
+def _room_from_department(department: str) -> str:
+    return ROOM_BY_DEPARTMENT.get(_norm_key(department), "K1")
+
+
+def _age_from_profile(profile: dict) -> str | int:
+    age = profile.get("age")
+    if age not in (None, ""):
+        return age
+    dob = profile.get("dob")
+    if not dob:
+        return ""
+    if isinstance(dob, datetime):
+        dob_date = dob.date()
+    elif isinstance(dob, date):
+        dob_date = dob
+    else:
+        try:
+            dob_date = datetime.fromisoformat(str(dob)).date()
+        except ValueError:
+            return ""
+    today = date.today()
+    return today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
+
+
+class Agent2EMRService:
+    def __init__(self):
+        self._db = firebase_db
+        self._firebase_available = FIREBASE_AVAILABLE
+        self._saved_records: dict[str, dict] = {}
+        self._mock_patients = {patient["id"]: dict(patient) for patient in MOCK_PATIENTS}
+        self._mock_history = {key: [dict(item) for item in value] for key, value in MOCK_HISTORY.items()}
+
+    def _get_profile(self, patient_id: str) -> dict:
+        if not self._firebase_available:
+            return {}
+        try:
+            doc = self._db.collection("patients").document(patient_id).get()
+            return doc.to_dict() if doc.exists else {}
+        except Exception:
+            return {}
+
+    def _build_patient_from_appointment(self, appointment_id: str, appt: dict) -> dict:
+        patient_id = appt.get("patient_id") or appointment_id
+        patient_name = appt.get("patient_name") or patient_id
+        profile = self._get_profile(patient_id)
+        triage_level = appt.get("triage_level") or 0
+        triage_map = {3: "high", 2: "medium", 1: "low"}
+        visit_no = str(appt.get("queue_number") or appointment_id[-4:]).upper()
+        record = {
+            "id": patient_id,
+            "appointment_id": appointment_id,
+            "name": patient_name,
+            "age": _age_from_profile(profile),
+            "gender": profile.get("gender", ""),
+            "room": profile.get("room") or _room_from_department(appt.get("department_name", "")),
+            "visit_no": visit_no,
+            "chief_complaint": appt.get("symptoms", ""),
+            "history": profile.get("medical_history", ""),
+            "symptoms": appt.get("symptoms", ""),
+            "triage_severity": triage_map.get(triage_level, "low"),
+            "triage_source": "Agent1",
+            "arrived_at": _iso_or_empty(appt.get("created_at") or appt.get("scheduled_at")),
+            "diagnosis": "",
+            "treatment_plan": "",
+            "current_medications": _to_list(profile.get("current_medications")),
+            "allergies": profile.get("allergies", ""),
+            "department": appt.get("department_name", ""),
+            "queue_number": appt.get("queue_number", 0),
+        }
+        if patient_id in self._saved_records:
+            saved = self._saved_records[patient_id]
+            record["diagnosis"] = saved.get("diagnosis", record["diagnosis"])
+            record["treatment_plan"] = saved.get("treatment_plan", record["treatment_plan"])
+        return record
+
+    def _firebase_patients(self) -> list[dict]:
+        if not self._firebase_available:
+            return []
+        try:
+            docs = self._db.collection("appointments").limit(200).stream()
+            rows = []
+            for doc in docs:
+                appt = doc.to_dict() or {}
+                if appt.get("status", "waiting") not in {"waiting", "in_consultation"}:
+                    continue
+                rows.append(self._build_patient_from_appointment(doc.id, appt))
+            rows.sort(key=lambda item: item.get("arrived_at", ""), reverse=False)
+            return rows
+        except Exception:
+            return []
+
+    def get_patient_queue(self) -> list[dict]:
+        return self._firebase_patients() or list(self._mock_patients.values())
+
+    def get_patient(self, patient_id: str) -> Optional[dict]:
+        for patient in self.get_patient_queue():
+            if patient["id"] == patient_id:
+                return patient
+        return self._mock_patients.get(patient_id)
+
+    def get_history(self, patient_id: str) -> list[dict]:
+        if self._firebase_available:
+            try:
+                docs = self._db.collection("medical_records").where("patient_id", "==", patient_id).stream()
+                rows = []
+                for doc in docs:
+                    item = doc.to_dict() or {}
+                    emr_data = item.get("emr_data") or {}
+                    rows.append(
+                        {
+                            "visit_date": str(item.get("record_date", ""))[:10],
+                            "chief_complaint": emr_data.get("chief_complaint", "") or item.get("chief_complaint", ""),
+                            "diagnosis": item.get("diagnosis", "") or emr_data.get("diagnosis", ""),
+                            "treatment": item.get("treatment", "") or emr_data.get("treatment_plan", ""),
+                            "follow_up_date": emr_data.get("follow_up_date", ""),
+                            "doctor": item.get("doctor_id", "DR001"),
+                        }
+                    )
+                rows.sort(key=lambda item: item.get("visit_date", ""), reverse=True)
+                if rows:
+                    return rows[:20]
+            except Exception:
+                pass
+        return self._mock_history.get(patient_id, [])
+
+    def save(self, req) -> str:
+        emr_id = str(uuid4())[:8].upper()
+        record = {
+            "emr_id": emr_id,
+            "patient_id": req.patient_id,
+            "patient_name": req.patient_name,
+            "chief_complaint": req.chief_complaint,
+            "symptoms": req.symptoms,
+            "history": req.history,
+            "diagnosis": req.diagnosis,
+            "treatment_plan": req.treatment_plan,
+            "follow_up_date": req.follow_up_date,
+            "prescriptions": req.prescriptions,
+            "lab_orders": req.lab_orders,
+            "notes": req.notes,
+            "doctor_id": req.doctor_id,
+            "soap": req.soap,
+            "created_at": datetime.now().isoformat(),
+            "status": "completed",
+        }
+        self._saved_records[req.patient_id] = record
+
+        if self._firebase_available:
+            try:
+                self._db.collection("medical_records").document(emr_id).set(
+                    {
+                        "patient_id": req.patient_id,
+                        "patient_name": req.patient_name,
+                        "doctor_id": req.doctor_id,
+                        "diagnosis": req.diagnosis,
+                        "treatment": req.treatment_plan,
+                        "chief_complaint": req.chief_complaint,
+                        "record_date": datetime.now().isoformat(),
+                        "emr_data": {
+                            "patient_name": req.patient_name,
+                            "chief_complaint": req.chief_complaint,
+                            "symptoms": req.symptoms,
+                            "history": req.history,
+                            "diagnosis": req.diagnosis,
+                            "treatment_plan": req.treatment_plan,
+                            "follow_up_date": req.follow_up_date,
+                            "prescriptions": req.prescriptions,
+                            "lab_orders": req.lab_orders,
+                            "notes": req.notes,
+                            "soap": req.soap,
+                        },
+                    }
+                )
+            except Exception:
+                pass
+
+        if req.patient_id in self._mock_patients:
+            self._mock_patients[req.patient_id]["diagnosis"] = req.diagnosis
+            self._mock_patients[req.patient_id]["treatment_plan"] = req.treatment_plan
+
+        history_item = {
+            "visit_date": datetime.now().date().isoformat(),
+            "chief_complaint": req.chief_complaint,
+            "diagnosis": req.diagnosis,
+            "treatment": req.treatment_plan,
+            "follow_up_date": req.follow_up_date,
+            "doctor": req.doctor_id,
+        }
+        self._mock_history.setdefault(req.patient_id, []).insert(0, history_item)
+        return emr_id

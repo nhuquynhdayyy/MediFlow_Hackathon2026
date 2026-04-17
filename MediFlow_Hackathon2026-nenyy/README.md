@@ -1,0 +1,137 @@
+# MediFlow AI — DocAssist Agent 2
+
+**GDGoC Hackathon Vietnam 2026 · Đội: Đại đại đi**
+
+Hệ thống AI Agent hỗ trợ bác sĩ: Voice-to-EMR, gợi ý chẩn đoán, đơn thuốc, xét nghiệm.  
+Sử dụng **FPT AI Marketplace API** làm LLM backend.
+
+---
+
+## Cấu trúc dự án
+
+```
+mediflow-docassist/
+├── backend/               # FastAPI
+│   ├── main.py            # Tất cả API endpoints
+│   ├── models.py          # Pydantic schemas
+│   ├── services/
+│   │   ├── fpt_ai.py      # FPT AI Marketplace service
+│   │   ├── emr.py         # EMR store (mock → Firebase)
+│   │   └── voice.py       # Voice service placeholder
+│   ├── requirements.txt
+│   └── .env.example
+│
+└── frontend/              # React + Vite + Tailwind
+    ├── src/
+    │   ├── App.jsx
+    │   ├── pages/DocAssistPage.jsx
+    │   ├── components/
+    │   │   ├── SettingsBar.jsx     # API key + model selector
+    │   │   ├── PatientQueue.jsx    # Danh sách bệnh nhân
+    │   │   ├── EMRForm.jsx         # Hồ sơ bệnh án
+    │   │   ├── VoiceRecorder.jsx   # Web Speech API
+    │   │   ├── PrescriptionTab.jsx # Đơn thuốc
+    │   │   ├── LabTab.jsx          # Xét nghiệm
+    │   │   ├── AIChatPanel.jsx     # AI chat streaming
+    │   │   ├── QRModal.jsx         # QR thanh toán
+    │   │   └── HistoryModal.jsx    # Bệnh án cũ
+    │   ├── hooks/useVoice.js       # Web Speech API hook
+    │   ├── services/api.js         # Axios + streaming
+    │   └── store/index.js          # Zustand global state
+    └── package.json
+```
+
+---
+
+## Cài đặt và chạy
+
+### 1. Backend
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Tạo file .env từ .env.example
+cp .env.example .env
+# Điền FPT_API_KEY vào .env
+
+uvicorn main:app --reload --port 8000
+```
+
+Truy cập docs: http://localhost:8000/docs
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Truy cập: http://localhost:5173
+
+---
+
+## Sử dụng
+
+1. Mở http://localhost:5173
+2. **Nhập FPT API key** vào ô trên thanh header
+3. Chọn model (khuyến nghị: `Llama-3.3-70B-Instruct`)
+4. Nhấn **"Test kết nối"** để kiểm tra
+5. Chọn bệnh nhân từ danh sách bên trái
+6. Dùng các chức năng AI:
+   - **AI gợi ý chẩn đoán** → phân tích triệu chứng
+   - **AI đề xuất điều trị** → phác đồ điều trị
+   - **Tóm tắt SOAP** → chuẩn hóa hồ sơ
+   - **Voice-to-EMR** → ghi âm hội thoại → tự điền hồ sơ
+   - **AI tạo đơn thuốc** → tab Đơn thuốc
+   - **AI gợi ý xét nghiệm** → tab Xét nghiệm
+   - **DocAssist Chat** → chat streaming bên phải
+
+---
+
+## API Endpoints (Backend)
+
+| Method | Path | Chức năng |
+|--------|------|-----------|
+| GET  | /health | Health check |
+| GET  | /api/emr/patients | Danh sách bệnh nhân |
+| GET  | /api/emr/patient/{id} | Chi tiết bệnh nhân |
+| POST | /api/emr/save | Lưu hồ sơ EMR |
+| GET  | /api/emr/history/{id} | Lịch sử khám |
+| POST | /api/ai/diagnosis | AI gợi ý chẩn đoán |
+| POST | /api/ai/treatment | AI đề xuất điều trị |
+| POST | /api/ai/prescription | AI tạo đơn thuốc |
+| POST | /api/ai/lab-suggestions | AI gợi ý xét nghiệm |
+| POST | /api/ai/voice-to-emr | Trích xuất EMR từ transcript |
+| POST | /api/ai/soap-summary | Tóm tắt SOAP |
+| POST | /api/chat | AI chat thông thường |
+| POST | /api/chat/stream | AI chat streaming (SSE) |
+| POST | /api/payment/generate-qr | Tạo QR thanh toán |
+
+---
+
+## FPT AI Marketplace
+
+- **Base URL:** `https://mkp-api.fptcloud.com`
+- **Endpoint:** `POST /chat/completions`
+- **Auth:** `Authorization: Bearer {api_key}`
+- **Lấy API key:** https://marketplace.fptcloud.com/en/my-account#my-api-key
+
+### Models được hỗ trợ:
+- `Llama-3.3-70B-Instruct` ← Khuyến nghị
+- `SaoLa3.1-medium` ← Tiếng Việt tốt
+- `QwQ-32B`
+- `DeepSeek-R1`
+
+---
+
+## Mở rộng (Post-hackathon)
+
+- **Firebase Firestore:** Thay `services/emr.py` mock bằng Firestore SDK
+- **Voice thật:** Tích hợp `Whisper API` hoặc `Gemini Live` trong `services/voice.py`
+- **VietQR thật:** Tích hợp VietQR API để tạo QR thanh toán thực
+- **Agent 1 integration:** Nhận context từ Triage Agent qua Firebase Realtime
+- **Agent 3 integration:** Gửi dữ liệu vận hành sang FlowPredict Agent
