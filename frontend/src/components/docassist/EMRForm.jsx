@@ -19,6 +19,10 @@ export default function EMRForm() {
   const [history, setHistory] = useState([])
 
   const ctx = () => ({
+    patient_id: activePatient?.id || '',
+    appointment_id: activePatient?.appointment_id || '',
+    department: activePatient?.department || activePatient?.recommended_department || activePatient?.room || '',
+    doctor_id: 'DR001',
     patient_name: activePatient?.name || '',
     patient_info: `${activePatient?.age || ''} tuoi - ${activePatient?.gender || ''} - Phong ${activePatient?.room || ''}`,
     chief_complaint: emr.chief_complaint,
@@ -103,7 +107,10 @@ export default function EMRForm() {
     try {
       const res = await saveEMR({
         patient_id: activePatient.id,
+        appointment_id: activePatient.appointment_id || '',
         patient_name: activePatient.name,
+        department: activePatient.department || activePatient.recommended_department || activePatient.room || '',
+        triage_level: activePatient.triage_level || null,
         chief_complaint: emr.chief_complaint,
         symptoms: emr.symptoms,
         history: emr.history,

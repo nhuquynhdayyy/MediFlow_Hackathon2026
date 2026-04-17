@@ -64,7 +64,12 @@ export default function VoiceRecorder() {
     setLoading('voice', true)
     addChatMessage({ role: 'assistant', text: 'Dang trich xuat AI EMR tu hoi thoai...', loading: true })
     try {
-      const res = await aiVoiceToEMR({ transcript })
+      const res = await aiVoiceToEMR({
+        transcript,
+        patient_id: activePatient?.id || '',
+        appointment_id: activePatient?.appointment_id || '',
+        doctor_id: 'DR001',
+      })
       const d = res.data || {}
       const synthesizedNotes = buildVoiceNotes(d)
 
@@ -105,6 +110,8 @@ export default function VoiceRecorder() {
       id: Date.now(),
       label,
       patient: activePatient?.name || '',
+      patient_id: activePatient?.id || '',
+      appointment_id: activePatient?.appointment_id || '',
       date: new Date().toLocaleString('vi-VN'),
       duration: seconds,
       utterances: finals,

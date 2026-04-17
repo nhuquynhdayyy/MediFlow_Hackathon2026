@@ -23,12 +23,26 @@ from services.triage_agent import TriageAgentService
 # Firebase â€” optional, fallback gracefully if not installed
 try:
     from database_firebase import (
-        create_appointment, get_patient_info,
-        save_patient_profile, get_appointments_by_uid, save_chat_session
+        append_workflow_event,
+        create_appointment,
+        get_patient_info,
+        get_appointments_by_uid,
+        save_ai_recommendation,
+        save_chat_session,
+        save_chat_session_enriched,
+        save_patient_profile,
     )
     FIREBASE_ENABLED = True
 except Exception as _fb_err:
     FIREBASE_ENABLED = False
+    append_workflow_event = None
+    create_appointment = None
+    get_appointments_by_uid = None
+    get_patient_info = None
+    save_ai_recommendation = None
+    save_chat_session = None
+    save_chat_session_enriched = None
+    save_patient_profile = None
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -90,6 +104,54 @@ def _normalize_voice_emr_fields(raw: dict) -> dict:
         "raw": raw.get("raw", ""),
     }
 
+
+def _extract_patient_id(context: Optional[dict]) -> str:
+    if not isinstance(context, dict):
+        return ""
+    return (
+        context.get("patient_id")
+        or context.get("id")
+        or context.get("patient_uid")
+        or ""
+    )
+
+
+def _safe_append_workflow_event(event_type: str, **kwargs):
+    if not FIREBASE_ENABLED or append_workflow_event is None:
+        return
+    try:
+        append_workflow_event(event_type, **kwargs)
+    except Exception as exc:
+        logger.warning("[workflow] event=%s failed: %s", event_type, exc)
+
+
+def _safe_save_ai_recommendation(
+    agent_name: str,
+    recommendation_type: str,
+    *,
+    request_payload: dict,
+    response_payload,
+    patient_id: str = "",
+    appointment_id: str = "",
+    medical_record_id: str = "",
+    doctor_id: str = "",
+):
+    if not FIREBASE_ENABLED or save_ai_recommendation is None:
+        return
+    try:
+        save_ai_recommendation(
+            agent_name=agent_name,
+            recommendation_type=recommendation_type,
+            request_payload=request_payload,
+            response_payload=response_payload,
+            patient_id=patient_id,
+            appointment_id=appointment_id,
+            medical_record_id=medical_record_id,
+            doctor_id=doctor_id,
+        )
+    except Exception as exc:
+        logger.warning("[ai_recommendation] type=%s failed: %s", recommendation_type, exc)
+
 # â”€â”€ Pydantic Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class ChatMessage(BaseModel):
     role: str
@@ -132,16 +194,27 @@ class CreateAppointmentRequest(BaseModel):
     scheduled_time: str
     triage_level: Optional[int] = None
     symptoms: Optional[str] = ""
+    chief_complaint: Optional[str] = ""
+    triage_summary: Optional[str] = ""
+    recommended_department: Optional[str] = ""
+    booking_source: Optional[str] = "agent1"
+    actor_role: Optional[str] = "patient"
+    chat_excerpt: Optional[list] = []
     session_id: Optional[str] = None
 
 class SavePatientRequest(BaseModel):
     uid: str
     name: str
     phone: str
+    email: Optional[str] = ""
+    role: Optional[str] = "patient"
     dob: Optional[str] = ""
     gender: Optional[str] = ""
     address: Optional[str] = ""
     insurance: Optional[str] = ""
+    medical_history: Optional[str] = ""
+    allergies: Optional[str] = ""
+    current_medications: Optional[list] = []
 
 class SaveChatSessionRequest(BaseModel):
     session_id: str
@@ -149,6 +222,9 @@ class SaveChatSessionRequest(BaseModel):
     messages: list
     triage_level: Optional[int] = None
     department: Optional[str] = None
+    summary: Optional[str] = ""
+    chief_complaint: Optional[str] = ""
+    recommended_action: Optional[str] = ""
 
 # â”€â”€ Health Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.get("/health")
@@ -228,6 +304,16 @@ async def ai_diagnosis(req: DocAssistRequest):
             user_message=req.prompt,
             context=req.patient_context,
         )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "diagnosis",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
+        )
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -245,6 +331,16 @@ async def ai_treatment(req: DocAssistRequest):
             system_prompt=TREATMENT_SYSTEM_PROMPT,
             user_message=req.prompt,
             context=req.patient_context,
+        )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "treatment",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
         )
         return {"status": "success", "result": result}
     except Exception as e:
@@ -264,6 +360,16 @@ async def ai_prescription(req: DocAssistRequest):
             user_message=req.prompt,
             context=req.patient_context,
         )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "prescription",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
+        )
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -281,6 +387,16 @@ async def ai_lab_suggestions(req: DocAssistRequest):
             user_message=req.prompt,
             context=req.patient_context,
         )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "lab_suggestions",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
+        )
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -297,6 +413,16 @@ async def ai_drug_suggestions(req: DocAssistRequest):
             system_prompt=DRUG_SUGGEST_SYSTEM_PROMPT,
             user_message=req.prompt,
             context=req.patient_context,
+        )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "drug_suggestions",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
         )
         return {"status": "success", "result": result}
     except Exception as e:
@@ -319,6 +445,16 @@ async def voice_to_emr(req: VoiceToEMRRequest):
         if not emr_json:
             emr_json = {"raw": result}
         normalized = _normalize_voice_emr_fields(emr_json)
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "voice_to_emr",
+            request_payload={
+                "transcript": req.transcript,
+                "patient_id": req.patient_id or "",
+            },
+            response_payload=normalized,
+            patient_id=req.patient_id or "",
+        )
         return {"status": "success", "emr": normalized}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -335,6 +471,16 @@ async def soap_summary(req: DocAssistRequest):
             system_prompt=SOAP_SYSTEM_PROMPT,
             user_message=req.prompt,
             context=req.patient_context,
+        )
+        _safe_save_ai_recommendation(
+            "agent2_legacy",
+            "soap_summary",
+            request_payload={
+                "prompt": req.prompt,
+                "patient_context": req.patient_context or {},
+            },
+            response_payload=result,
+            patient_id=_extract_patient_id(req.patient_context),
         )
         return {"status": "success", "result": result}
     except Exception as e:
@@ -400,16 +546,50 @@ def api_create_appointment(req: CreateAppointmentRequest):
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     try:
+        symptoms = req.symptoms or req.chief_complaint or ""
+        resolved_patient_name = req.patient_name or req.patient_uid
+        if get_patient_info is not None:
+            try:
+                patient_profile = get_patient_info(req.patient_uid) or {}
+                resolved_patient_name = (
+                    patient_profile.get("name")
+                    or patient_profile.get("full_name")
+                    or resolved_patient_name
+                )
+            except Exception:
+                pass
         appt_id = create_appointment(
             patient_id=req.patient_uid,
             dept_name=req.department,
             time=f"{req.scheduled_date} {req.scheduled_time}",
             phone=req.patient_phone,
-            patient_name=req.patient_name,
+            patient_name=resolved_patient_name,
             triage_level=req.triage_level,
-            symptoms=req.symptoms,
+            symptoms=symptoms,
+            chief_complaint=req.chief_complaint or symptoms,
+            triage_summary=req.triage_summary,
+            recommended_department=req.recommended_department or req.department,
+            booking_source=req.booking_source,
+            source=req.booking_source,
+            actor_role=req.actor_role,
+            patient_uid=req.patient_uid,
+            chat_excerpt=req.chat_excerpt or [],
             session_id=req.session_id,
         )
+        try:
+            save_patient_profile(
+                req.patient_uid,
+                resolved_patient_name,
+                req.patient_phone,
+                source="api_appointments_create",
+                role="patient",
+                last_appointment_id=appt_id,
+                last_department=req.department,
+                last_triage_level=req.triage_level,
+                latest_symptoms=symptoms,
+            )
+        except Exception as exc:
+            logger.warning("[Appointment] patient profile sync failed: %s", exc)
         logger.info(f"[Appointment] Created: {appt_id} for {req.department}")
         return {"status": "success", "appointment_id": appt_id,
                 "message": f"ÄÃ£ Ä‘áº·t lá»‹ch táº¡i {req.department}"}
@@ -431,9 +611,22 @@ def api_save_patient(req: SavePatientRequest):
     """LÆ°u há»“ sÆ¡ bá»‡nh nhÃ¢n."""
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
-    save_patient_profile(req.uid, req.name, req.phone,
-                         dob=req.dob, gender=req.gender,
-                         address=req.address, insurance=req.insurance)
+    save_patient_profile(
+        req.uid,
+        req.name,
+        req.phone,
+        email=req.email,
+        role=req.role,
+        dob=req.dob,
+        gender=req.gender,
+        address=req.address,
+        insurance=req.insurance,
+        medical_history=req.medical_history,
+        allergies=req.allergies,
+        current_medications=req.current_medications,
+        source="api_patients_save",
+        actor_role=req.role or "patient",
+    )
     return {"status": "success", "message": "ÄÃ£ lÆ°u há»“ sÆ¡ bá»‡nh nhÃ¢n"}
 
 
@@ -442,8 +635,21 @@ def api_save_session(req: SaveChatSessionRequest):
     """LÆ°u phiÃªn chat triage."""
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
-    save_chat_session(req.session_id, req.patient_uid,
-                      req.messages, req.triage_level, req.department)
+    if save_chat_session_enriched is not None:
+        save_chat_session_enriched(
+            session_id=req.session_id,
+            uid=req.patient_uid,
+            messages=req.messages,
+            triage_level=req.triage_level,
+            department=req.department,
+            summary=req.summary,
+            chief_complaint=req.chief_complaint,
+            recommended_action=req.recommended_action,
+            source="api_chat_sessions_save",
+        )
+    else:
+        save_chat_session(req.session_id, req.patient_uid,
+                          req.messages, req.triage_level, req.department)
     return {"status": "success"}
 
 

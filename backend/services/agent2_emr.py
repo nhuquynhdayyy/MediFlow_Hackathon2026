@@ -9,11 +9,13 @@ from typing import Optional
 from uuid import uuid4
 
 try:
-    from database_firebase import db as firebase_db  # type: ignore
+    from database_firebase import append_workflow_event, db as firebase_db, update_appointment_status  # type: ignore
 
     FIREBASE_AVAILABLE = True
 except Exception:
+    append_workflow_event = None
     firebase_db = None
+    update_appointment_status = None
     FIREBASE_AVAILABLE = False
 
 ROOM_BY_DEPARTMENT = {
@@ -186,7 +188,11 @@ def _norm_key(value: str) -> str:
 
 
 def _room_from_department(department: str) -> str:
-    return ROOM_BY_DEPARTMENT.get(_norm_key(department), "K1")
+    normalized = _norm_key(department)
+    for key, room in ROOM_BY_DEPARTMENT.items():
+        if _norm_key(key) == normalized:
+            return room
+    return "K1"
 
 
 def _age_from_profile(profile: dict) -> str | int:
@@ -235,6 +241,24 @@ def _normalize_saved_emr(payload: dict) -> dict:
     }
 
 
+def _safe_append_workflow_event(event_type: str, **kwargs):
+    if append_workflow_event is None:
+        return
+    try:
+        append_workflow_event(event_type, **kwargs)
+    except Exception:
+        return
+
+
+def _safe_update_appointment_status(appointment_id: str, status: str, **kwargs):
+    if not appointment_id or update_appointment_status is None:
+        return
+    try:
+        update_appointment_status(appointment_id, status, **kwargs)
+    except Exception:
+        return
+
+
 class Agent2EMRService:
     def __init__(self):
         self._db = firebase_db
@@ -259,26 +283,40 @@ class Agent2EMRService:
         triage_level = appt.get("triage_level") or 0
         triage_map = {3: "high", 2: "medium", 1: "low"}
         visit_no = str(appt.get("queue_number") or appointment_id[-4:]).upper()
+        room_department = appt.get("recommended_department") or appt.get("department_name", "")
+        history = (
+            profile.get("medical_history")
+            or profile.get("history")
+            or appt.get("medical_history")
+            or ""
+        )
+        chief_complaint = appt.get("chief_complaint") or appt.get("symptoms") or appt.get("triage_summary") or ""
+        symptoms = appt.get("symptoms") or appt.get("triage_summary") or ""
         record = {
             "id": patient_id,
             "appointment_id": appointment_id,
             "name": patient_name,
             "age": _age_from_profile(profile),
             "gender": profile.get("gender", ""),
-            "room": profile.get("room") or _room_from_department(appt.get("department_name", "")),
+            "room": profile.get("room") or _room_from_department(room_department),
             "visit_no": visit_no,
-            "chief_complaint": appt.get("symptoms", ""),
-            "history": profile.get("medical_history", ""),
-            "symptoms": appt.get("symptoms", ""),
+            "chief_complaint": chief_complaint,
+            "history": history,
+            "symptoms": symptoms,
             "triage_severity": triage_map.get(triage_level, "low"),
             "triage_source": "Agent1",
             "arrived_at": _iso_or_empty(appt.get("created_at") or appt.get("scheduled_at")),
             "diagnosis": "",
             "treatment_plan": "",
-            "current_medications": _to_list(profile.get("current_medications")),
-            "allergies": profile.get("allergies", ""),
+            "current_medications": _to_list(profile.get("current_medications") or appt.get("current_medications")),
+            "allergies": profile.get("allergies", "") or appt.get("allergies", ""),
             "department": appt.get("department_name", ""),
+            "recommended_department": appt.get("recommended_department", ""),
+            "triage_level": triage_level,
+            "triage_summary": appt.get("triage_summary", ""),
             "queue_number": appt.get("queue_number", 0),
+            "patient_phone": appt.get("patient_phone", ""),
+            "session_id": appt.get("session_id", ""),
         }
         if patient_id in self._saved_records:
             saved = self._saved_records[patient_id]
@@ -339,13 +377,20 @@ class Agent2EMRService:
     def save(self, req) -> str:
         emr_id = str(uuid4())[:8].upper()
         normalized = _normalize_saved_emr(req.model_dump())
+        recorded_at = datetime.now().isoformat()
+        emr_payload = {
+            **normalized,
+            "appointment_id": req.appointment_id,
+            "department": req.department,
+            "triage_level": req.triage_level,
+        }
         record = {
             "emr_id": emr_id,
             "patient_id": req.patient_id,
             "patient_name": req.patient_name,
-            **normalized,
+            **emr_payload,
             "doctor_id": req.doctor_id,
-            "created_at": datetime.now().isoformat(),
+            "created_at": recorded_at,
             "status": "completed",
         }
         self._saved_records[req.patient_id] = record
@@ -356,6 +401,9 @@ class Agent2EMRService:
                     {
                         "patient_id": req.patient_id,
                         "patient_name": req.patient_name,
+                        "appointment_id": req.appointment_id,
+                        "department": req.department,
+                        "triage_level": req.triage_level,
                         "doctor_id": req.doctor_id,
                         "chief_complaint": normalized["chief_complaint"],
                         "symptoms": normalized["symptoms"],
@@ -372,12 +420,44 @@ class Agent2EMRService:
                         "lab_orders": normalized["lab_orders"],
                         "notes": normalized["notes"],
                         "soap": normalized["soap"],
-                        "record_date": datetime.now().isoformat(),
-                        "emr_data": normalized,
+                        "status": "completed",
+                        "source_agent": "agent2_doctor",
+                        "record_date": recorded_at,
+                        "updated_at": recorded_at,
+                        "emr_data": emr_payload,
                     }
                 )
             except Exception:
                 pass
+
+        _safe_append_workflow_event(
+            "doctor_emr_saved",
+            patient_id=req.patient_id,
+            appointment_id=req.appointment_id,
+            medical_record_id=emr_id,
+            actor_id=req.doctor_id,
+            actor_role="doctor",
+            source="backend_agent2",
+            payload={
+                "department": req.department,
+                "triage_level": req.triage_level,
+                "diagnosis": normalized["diagnosis"],
+                "treatment_plan": normalized["treatment_plan"],
+            },
+        )
+        _safe_update_appointment_status(
+            req.appointment_id,
+            "completed",
+            patient_id=req.patient_id,
+            actor_id=req.doctor_id,
+            actor_role="doctor",
+            doctor_id=req.doctor_id,
+            source="backend_agent2",
+            completed_at=recorded_at,
+            last_medical_record_id=emr_id,
+            last_diagnosis=normalized["diagnosis"],
+            last_treatment_plan=normalized["treatment_plan"],
+        )
 
         if req.patient_id in self._mock_patients:
             self._mock_patients[req.patient_id]["diagnosis"] = normalized["diagnosis"]

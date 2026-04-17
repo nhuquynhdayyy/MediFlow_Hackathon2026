@@ -3,7 +3,7 @@ import {
   Send, Mic, MicOff, Trash2, AlertTriangle, Calendar, Home, Bot, User, Radio
 } from 'lucide-react'
 import { useStore } from '../store'
-import { triageChatStream, createAppointment } from '../services/api'
+import { triageChatStream, createAppointment, saveChatSession, savePatientProfile } from '../services/api'
 import { useVoice } from '../hooks/useVoice'
 import { useConversationalVoice, VS } from '../hooks/useConversationalVoice'
 import VoiceConversationOverlay from '../components/VoiceConversationOverlay'
@@ -40,6 +40,40 @@ const isVoiceBookingConfirmation = (s = '') => {
     t === 'dat lich'
   )
 }
+
+const extractMessageText = (message = {}) =>
+  String(message?.content || message?.text || '').trim()
+
+const extractUserMessages = (messages = []) =>
+  messages
+    .filter((message) => message?.role === 'user')
+    .map((message) => extractMessageText(message))
+    .filter(Boolean)
+
+const extractChiefComplaint = (messages = []) =>
+  extractUserMessages(messages)[0] || ''
+
+const extractSymptomSummary = (messages = []) =>
+  extractUserMessages(messages).slice(-6).join(' | ').slice(0, 1500)
+
+const extractRecentChat = (messages = []) =>
+  messages
+    .slice(-8)
+    .map((message) => ({
+      role: message?.role || 'user',
+      content: extractMessageText(message),
+    }))
+    .filter((message) => message.content)
+
+const extractLatestAssistantSummary = (messages = [], fallback = '') => {
+  const latestAssistant = [...messages]
+    .reverse()
+    .find((message) => message?.role === 'assistant' && extractMessageText(message))
+  return extractMessageText(latestAssistant) || fallback
+}
+
+const buildPatientName = (user) =>
+  user?.full_name || user?.email || 'Benh nhan'
 
 export default function TriagePage() {
   const {
@@ -202,7 +236,19 @@ export default function TriagePage() {
           .replace(/\[DEPT:[^\]]+\]/g, '')
           .replace(/\[BOOK:[^\]]+\]/g, '')
           .trim()
-        addMessageAndSync({ role: 'assistant', content: clean, triageLevel: level, department: dept, action, bookingData })
+        const assistantMessage = { role: 'assistant', content: clean, triageLevel: level, department: dept, action, bookingData }
+        addMessageAndSync(assistantMessage)
+        const conversationSnapshot = [...historyRef.current]
+        void saveChatSession({
+          session_id: sessionId,
+          patient_uid: user?.uid || 'anonymous',
+          messages: conversationSnapshot,
+          triage_level: level,
+          department: dept,
+          summary: clean,
+          chief_complaint: extractChiefComplaint(conversationSnapshot),
+          recommended_action: action || '',
+        }).catch(() => {})
       },
       // onError
       (err) => {
@@ -212,7 +258,7 @@ export default function TriagePage() {
       },
     )
   }, [input, apiKey, model, triageLoading, triageSession,
-    addMessageAndSync, setTriageLoading, setTriageSession, resetRec])
+    addMessageAndSync, setTriageLoading, setTriageSession, resetRec, user])
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
@@ -221,6 +267,11 @@ export default function TriagePage() {
   // ── Xác nhận đặt lịch từ nút trong chat ──
   const handleConfirmBooking = useCallback(async (bookingData, msgIndex) => {
     try {
+      const conversationSnapshot = [...historyRef.current]
+      const patientName = buildPatientName(user)
+      const symptoms = extractSymptomSummary(conversationSnapshot)
+      const chiefComplaint = extractChiefComplaint(conversationSnapshot)
+      const triageSummary = extractLatestAssistantSummary(conversationSnapshot)
       const res = await createAppointment({
         patient_uid: user?.uid || 'anonymous',
         patient_name: user?.email || 'Bệnh nhân',
@@ -229,10 +280,24 @@ export default function TriagePage() {
         scheduled_date: bookingData.scheduled_date,
         scheduled_time: bookingData.scheduled_time,
         triage_level: bookingData.triage_level,
+        symptoms,
+        chief_complaint: chiefComplaint,
+        triage_summary: triageSummary,
+        recommended_department: bookingData.department,
+        booking_source: 'frontend_agent1',
+        actor_role: 'patient',
+        chat_excerpt: extractRecentChat(conversationSnapshot),
         session_id: triageSession,
       })
       setConfirmedBookings(prev => new Set([...prev, msgIndex]))
       const apptId = res.appointment_id || 'N/A'
+      void savePatientProfile({
+        uid: user?.uid || 'anonymous',
+        name: patientName,
+        phone: bookingData.patient_phone,
+        email: user?.email || '',
+        role: 'patient',
+      }).catch(() => {})
       addMessageAndSync({
         role: 'assistant',
         content: `✅ Đặt lịch thành công!\n📋 Mã lịch hẹn: ${apptId}\n🏥 ${bookingData.department}\n📅 ${bookingData.scheduled_time} ngày ${bookingData.scheduled_date}\n📞 SĐT: ${bookingData.patient_phone}`,

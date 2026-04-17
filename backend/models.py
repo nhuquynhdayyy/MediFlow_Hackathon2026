@@ -19,8 +19,12 @@ class ChatRequest(BaseModel):
 
 
 class EMRData(BaseModel):
+    patient_id:        str  = ""
+    appointment_id:    str  = ""
     patient_name:      str
     patient_info:      str  = ""
+    department:        str  = ""
+    doctor_id:         str  = "DR001"
     chief_complaint:   str  = ""
     symptoms:          str  = ""
     history:           str  = ""
@@ -31,6 +35,9 @@ class EMRData(BaseModel):
 
 
 class PrescriptionRequest(BaseModel):
+    patient_id:          str  = ""
+    appointment_id:      str  = ""
+    doctor_id:           str  = "DR001"
     diagnosis:           str
     patient_info:        str  = ""
     history:             str  = ""
@@ -43,6 +50,9 @@ class PrescriptionRequest(BaseModel):
 
 
 class LabRequest(BaseModel):
+    patient_id:    str = ""
+    appointment_id: str = ""
+    doctor_id:     str = "DR001"
     symptoms:      str
     diagnosis:     str  = ""
     history:       str  = ""
@@ -51,6 +61,9 @@ class LabRequest(BaseModel):
 
 
 class DrugSuggestRequest(BaseModel):
+    patient_id:          str = ""
+    appointment_id:      str = ""
+    doctor_id:           str = "DR001"
     diagnosis:           str = ""
     symptoms:            str = ""
     chief_complaint:     str = ""
@@ -64,12 +77,17 @@ class DrugSuggestRequest(BaseModel):
 
 class VoiceTranscriptRequest(BaseModel):
     transcript: str
+    patient_id: str = ""
+    appointment_id: str = ""
+    doctor_id: str = "DR001"
     model:      Optional[str] = None
 
 
 class SaveEMRRequest(BaseModel):
     patient_id:     str
+    appointment_id: str = ""
     patient_name:   str
+    department:     str = ""
     chief_complaint: str = ""
     symptoms:        str = ""
     history:         str = ""
@@ -84,4 +102,5 @@ class SaveEMRRequest(BaseModel):
     lab_orders:      Optional[List[str]]  = []
     notes:           str  = ""
     doctor_id:       str  = "DR001"
+    triage_level:    Optional[int] = None
     soap:            Optional[dict] = None

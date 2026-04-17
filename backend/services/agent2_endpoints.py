@@ -25,6 +25,11 @@ from models import (
 from services.agent2_emr import Agent2EMRService
 from services.agent2_fpt import Agent2FPTAIService
 
+try:
+    from database_firebase import save_ai_recommendation  # type: ignore
+except Exception:
+    save_ai_recommendation = None
+
 load_dotenv()
 
 router = APIRouter(prefix="/api/doctor", tags=["agent2-doctor"])
@@ -63,6 +68,33 @@ def _safe_json_loads(text: str):
         if start >= 0 and end > start:
             return json.loads(cleaned[start : end + 1])
         raise
+
+
+def _safe_save_ai_recommendation(
+    recommendation_type: str,
+    *,
+    request_payload: dict,
+    response_payload,
+    patient_id: str = "",
+    appointment_id: str = "",
+    medical_record_id: str = "",
+    doctor_id: str = "",
+):
+    if save_ai_recommendation is None:
+        return
+    try:
+        save_ai_recommendation(
+            agent_name="agent2_doctor",
+            recommendation_type=recommendation_type,
+            request_payload=request_payload,
+            response_payload=response_payload,
+            patient_id=patient_id,
+            appointment_id=appointment_id,
+            medical_record_id=medical_record_id,
+            doctor_id=doctor_id,
+        )
+    except Exception:
+        return
 
 
 @router.post("/chat")
@@ -116,9 +148,9 @@ Tra loi JSON (chi JSON, khong text khac):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {
+        response = {
             "success": True,
             "data": {
                 "primary_diagnosis": result,
@@ -128,6 +160,15 @@ Tra loi JSON (chi JSON, khong text khac):
                 "next_steps": [],
             },
         }
+    _safe_save_ai_recommendation(
+        "diagnosis",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/treatment")
@@ -157,9 +198,9 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {
+        response = {
             "success": True,
             "data": {
                 "medications": [],
@@ -170,6 +211,15 @@ Tra loi JSON (chi JSON):
                 "warnings": [],
             },
         }
+    _safe_save_ai_recommendation(
+        "treatment",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/prescription")
@@ -209,9 +259,9 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {
+        response = {
             "success": True,
             "data": {
                 "prescriptions": [],
@@ -223,6 +273,15 @@ Tra loi JSON (chi JSON):
                 "raw": result,
             },
         }
+    _safe_save_ai_recommendation(
+        "prescription",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/lab-suggestions")
@@ -251,9 +310,18 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {"success": True, "data": {"urgent": [], "routine": [], "optional": [], "imaging": [], "raw": result}}
+        response = {"success": True, "data": {"urgent": [], "routine": [], "optional": [], "imaging": [], "raw": result}}
+    _safe_save_ai_recommendation(
+        "lab_suggestions",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/drug-suggestions")
@@ -297,9 +365,18 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {"success": True, "data": {"suggestions": [], "warnings": [], "raw": result}}
+        response = {"success": True, "data": {"suggestions": [], "warnings": [], "raw": result}}
+    _safe_save_ai_recommendation(
+        "drug_suggestions",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/voice-to-emr")
@@ -337,9 +414,9 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {
+        response = {
             "success": True,
             "data": {
                 "chief_complaint": "",
@@ -355,6 +432,15 @@ Tra loi JSON (chi JSON):
                 "confidence": 0.5,
             },
         }
+    _safe_save_ai_recommendation(
+        "voice_to_emr",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.post("/ai/soap-summary")
@@ -383,9 +469,18 @@ Tra loi JSON (chi JSON):
         raise HTTPException(status_code=502, detail="FPT AI API loi")
     try:
         data = _safe_json_loads(result)
-        return {"success": True, "data": data}
+        response = {"success": True, "data": data}
     except json.JSONDecodeError:
-        return {"success": True, "data": {"S": "", "O": "", "A": "", "P": result, "icd10_code": ""}}
+        response = {"success": True, "data": {"S": "", "O": "", "A": "", "P": result, "icd10_code": ""}}
+    _safe_save_ai_recommendation(
+        "soap_summary",
+        request_payload=req.model_dump(),
+        response_payload=response["data"],
+        patient_id=req.patient_id,
+        appointment_id=req.appointment_id,
+        doctor_id=req.doctor_id,
+    )
+    return response
 
 
 @router.get("/emr/patients")
