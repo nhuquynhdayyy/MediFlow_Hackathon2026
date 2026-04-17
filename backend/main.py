@@ -1,7 +1,7 @@
-"""
+﻿"""
 MediFlow AI - Backend FastAPI
-Agent 1: Triage & Navigation (chat với bệnh nhân)
-Agent 2: DocAssist (hỗ trợ bác sĩ)
+Agent 1: Triage & Navigation (chat vá»›i bá»‡nh nhÃ¢n)
+Agent 2: DocAssist (há»— trá»£ bÃ¡c sÄ©)
 """
 import os
 import json
@@ -19,7 +19,7 @@ from services.fpt_ai import FPTAIService
 from services.emr import EMRService
 from services.triage_agent import TriageAgentService
 
-# Firebase — optional, fallback gracefully if not installed
+# Firebase â€” optional, fallback gracefully if not installed
 try:
     from database_firebase import (
         create_appointment, get_patient_info,
@@ -43,12 +43,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Services ─────────────────────────────────────────────────────────────
+# â”€â”€ Services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 fpt_service = FPTAIService()
 emr_service = EMRService()
 triage_service = TriageAgentService()
 
-# ── Pydantic Schemas ──────────────────────────────────────────────────────
+
+def _clean_json_text(text: str) -> str:
+    if not text:
+        return ""
+    return text.strip().replace("```json", "").replace("```", "").strip()
+
+
+def _safe_json_loads(text: str) -> dict:
+    cleaned = _clean_json_text(text)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        start_obj = cleaned.find("{")
+        end_obj = cleaned.rfind("}")
+        if start_obj >= 0 and end_obj > start_obj:
+            try:
+                return json.loads(cleaned[start_obj:end_obj + 1])
+            except Exception:
+                return {}
+        return {}
+
+
+def _normalize_voice_emr_fields(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "chief_complaint": raw.get("chief_complaint", "") or raw.get("ly_do_kham", ""),
+        "symptoms": raw.get("symptoms", "") or raw.get("trieu_chung", ""),
+        "medical_history": raw.get("medical_history", "") or raw.get("history", ""),
+        "allergies": raw.get("allergies", "") or raw.get("di_ung", ""),
+        "current_medications": raw.get("current_medications", "") or raw.get("thuoc_dang_dung", ""),
+        "preliminary_diagnosis": (
+            raw.get("preliminary_diagnosis", "")
+            or raw.get("assessment", "")
+            or raw.get("chan_doan_so_bo", "")
+        ),
+        "treatment_plan": raw.get("treatment_plan", "") or raw.get("plan", ""),
+        "raw": raw.get("raw", ""),
+    }
+
+# â”€â”€ Pydantic Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -108,18 +148,18 @@ class SaveChatSessionRequest(BaseModel):
     triage_level: Optional[int] = None
     department: Optional[str] = None
 
-# ── Health Check ──────────────────────────────────────────────────────────
+# â”€â”€ Health Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.get("/health")
 def health_check():
     return {"status": "ok", "timestamp": datetime.now().isoformat(), "service": "MediFlow AI"}
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AGENT 1: TRIAGE & NAVIGATION
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.post("/api/triage/chat")
 async def triage_chat(req: TriageChatRequest):
-    """Chat với AI Triage Agent - trả về response đầy đủ."""
+    """Chat vá»›i AI Triage Agent - tráº£ vá» response Ä‘áº§y Ä‘á»§."""
     logger.info(f"[Triage] session={req.session_id} msg={req.message[:60]}...")
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
@@ -144,7 +184,7 @@ async def triage_chat(req: TriageChatRequest):
 
 @app.post("/api/triage/chat/stream")
 async def triage_chat_stream(req: TriageChatRequest):
-    """Chat với AI Triage Agent - streaming SSE."""
+    """Chat vá»›i AI Triage Agent - streaming SSE."""
     logger.info(f"[Triage/stream] msg={req.message[:60]}...")
     api_key = req.api_key or os.getenv("FPT_API_KEY", "")
 
@@ -163,13 +203,13 @@ async def triage_chat_stream(req: TriageChatRequest):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AGENT 2: DOC ASSIST
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.post("/api/ai/diagnosis")
 async def ai_diagnosis(req: DocAssistRequest):
-    """AI gợi ý chẩn đoán dựa trên triệu chứng."""
+    """AI gá»£i Ã½ cháº©n Ä‘oÃ¡n dá»±a trÃªn triá»‡u chá»©ng."""
     logger.info("[DocAssist] diagnosis request")
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
@@ -187,7 +227,7 @@ async def ai_diagnosis(req: DocAssistRequest):
 
 @app.post("/api/ai/treatment")
 async def ai_treatment(req: DocAssistRequest):
-    """AI đề xuất phác đồ điều trị."""
+    """AI Ä‘á» xuáº¥t phÃ¡c Ä‘á»“ Ä‘iá»u trá»‹."""
     logger.info("[DocAssist] treatment request")
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
@@ -205,7 +245,7 @@ async def ai_treatment(req: DocAssistRequest):
 
 @app.post("/api/ai/prescription")
 async def ai_prescription(req: DocAssistRequest):
-    """AI tạo đơn thuốc mẫu."""
+    """AI táº¡o Ä‘Æ¡n thuá»‘c máº«u."""
     logger.info("[DocAssist] prescription request")
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
@@ -223,7 +263,7 @@ async def ai_prescription(req: DocAssistRequest):
 
 @app.post("/api/ai/lab-suggestions")
 async def ai_lab_suggestions(req: DocAssistRequest):
-    """AI gợi ý xét nghiệm cần làm."""
+    """AI gá»£i Ã½ xÃ©t nghiá»‡m cáº§n lÃ m."""
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
         result = await fpt_service.call(
@@ -238,9 +278,26 @@ async def ai_lab_suggestions(req: DocAssistRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/ai/drug-suggestions")
+async def ai_drug_suggestions(req: DocAssistRequest):
+    """AI goi y danh sach thuoc phu hop voi bo canh hien tai."""
+    try:
+        api_key = req.api_key or os.getenv("FPT_API_KEY", "")
+        result = await fpt_service.call(
+            api_key=api_key,
+            model=req.model,
+            system_prompt=DRUG_SUGGEST_SYSTEM_PROMPT,
+            user_message=req.prompt,
+            context=req.patient_context,
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/ai/voice-to-emr")
 async def voice_to_emr(req: VoiceToEMRRequest):
-    """Chuyển transcript hội thoại bác sĩ-bệnh nhân thành cấu trúc EMR."""
+    """Chuyá»ƒn transcript há»™i thoáº¡i bÃ¡c sÄ©-bá»‡nh nhÃ¢n thÃ nh cáº¥u trÃºc EMR."""
     logger.info(f"[DocAssist] voice-to-emr len={len(req.transcript)}")
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
@@ -248,21 +305,20 @@ async def voice_to_emr(req: VoiceToEMRRequest):
             api_key=api_key,
             model=req.model,
             system_prompt=VOICE_TO_EMR_SYSTEM_PROMPT,
-            user_message=f"Transcript hội thoại:\n{req.transcript}",
+            user_message=f"Transcript há»™i thoáº¡i:\n{req.transcript}",
         )
-        # Try to parse JSON from result
-        try:
-            emr_json = json.loads(result)
-        except Exception:
+        emr_json = _safe_json_loads(result)
+        if not emr_json:
             emr_json = {"raw": result}
-        return {"status": "success", "emr": emr_json}
+        normalized = _normalize_voice_emr_fields(emr_json)
+        return {"status": "success", "emr": normalized}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/ai/soap-summary")
 async def soap_summary(req: DocAssistRequest):
-    """Tóm tắt SOAP từ thông tin bệnh nhân."""
+    """TÃ³m táº¯t SOAP tá»« thÃ´ng tin bá»‡nh nhÃ¢n."""
     try:
         api_key = req.api_key or os.getenv("FPT_API_KEY", "")
         result = await fpt_service.call(
@@ -298,9 +354,9 @@ async def chat_stream(req: DocAssistRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # EMR ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.get("/api/emr/patients")
 def get_patients():
@@ -326,15 +382,15 @@ def get_history(patient_id: str):
     return {"status": "success", "data": emr_service.get_history(patient_id)}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # APPOINTMENTS & PATIENT PROFILE (Firestore)
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.post("/api/appointments/create")
 def api_create_appointment(req: CreateAppointmentRequest):
-    """Đặt lịch khám từ kết quả chat triage."""
+    """Äáº·t lá»‹ch khÃ¡m tá»« káº¿t quáº£ chat triage."""
     if not FIREBASE_ENABLED:
-        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+        raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     try:
         appt_id = create_appointment(
             patient_id=req.patient_uid,
@@ -348,7 +404,7 @@ def api_create_appointment(req: CreateAppointmentRequest):
         )
         logger.info(f"[Appointment] Created: {appt_id} for {req.department}")
         return {"status": "success", "appointment_id": appt_id,
-                "message": f"Đã đặt lịch tại {req.department}"}
+                "message": f"ÄÃ£ Ä‘áº·t lá»‹ch táº¡i {req.department}"}
     except Exception as e:
         logger.error(f"[Appointment] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -356,40 +412,40 @@ def api_create_appointment(req: CreateAppointmentRequest):
 
 @app.get("/api/appointments/{uid}")
 def api_get_appointments(uid: str):
-    """Lấy danh sách lịch hẹn của bệnh nhân."""
+    """Láº¥y danh sÃ¡ch lá»‹ch háº¹n cá»§a bá»‡nh nhÃ¢n."""
     if not FIREBASE_ENABLED:
-        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+        raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     return {"status": "success", "data": get_appointments_by_uid(uid)}
 
 
 @app.post("/api/patients/save")
 def api_save_patient(req: SavePatientRequest):
-    """Lưu hồ sơ bệnh nhân."""
+    """LÆ°u há»“ sÆ¡ bá»‡nh nhÃ¢n."""
     if not FIREBASE_ENABLED:
-        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+        raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     save_patient_profile(req.uid, req.name, req.phone,
                          dob=req.dob, gender=req.gender,
                          address=req.address, insurance=req.insurance)
-    return {"status": "success", "message": "Đã lưu hồ sơ bệnh nhân"}
+    return {"status": "success", "message": "ÄÃ£ lÆ°u há»“ sÆ¡ bá»‡nh nhÃ¢n"}
 
 
 @app.post("/api/chat-sessions/save")
 def api_save_session(req: SaveChatSessionRequest):
-    """Lưu phiên chat triage."""
+    """LÆ°u phiÃªn chat triage."""
     if not FIREBASE_ENABLED:
-        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+        raise HTTPException(status_code=503, detail="Firebase chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     save_chat_session(req.session_id, req.patient_uid,
                       req.messages, req.triage_level, req.department)
     return {"status": "success"}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PAYMENT
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.post("/api/payment/generate-qr")
 def generate_payment_qr(req: PaymentQRRequest):
-    """Mock QR thanh toán (dùng VietQR format)."""
+    """Mock QR thanh toÃ¡n (dÃ¹ng VietQR format)."""
     qr_data = {
         "bank": "Vietcombank",
         "account": "1234567890",
@@ -401,70 +457,88 @@ def generate_payment_qr(req: PaymentQRRequest):
     return {"status": "success", "data": qr_data}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SYSTEM PROMPTS
-# ═══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-DIAGNOSIS_SYSTEM_PROMPT = """Bạn là trợ lý AI hỗ trợ bác sĩ tại bệnh viện MediFlow.
-Dựa trên triệu chứng và thông tin bệnh nhân được cung cấp, hãy:
-1. Liệt kê 3-5 chẩn đoán phân biệt khả năng cao (theo thứ tự ưu tiên)
-2. Giải thích ngắn gọn lý do cho mỗi chẩn đoán
-3. Đề xuất các xét nghiệm cần làm để xác nhận
-Lưu ý: Đây CHỈ là gợi ý hỗ trợ, bác sĩ phải quyết định cuối cùng."""
+DIAGNOSIS_SYSTEM_PROMPT = """Ban la tro ly AI ho tro bac si tai benh vien MediFlow.
+Phan tich du lieu benh nhan va de xuat:
+1. 3-5 chan doan phan biet theo thu tu uu tien
+2. Ly do ngan gon cho tung chan doan
+3. Cac xet nghiem can lam de xac nhan
+Luu y: day la goi y ho tro, quyet dinh cuoi cung thuoc ve bac si."""
 
-TREATMENT_SYSTEM_PROMPT = """Bạn là trợ lý AI hỗ trợ bác sĩ tại bệnh viện MediFlow.
-Dựa trên thông tin bệnh nhân và chẩn đoán, đề xuất phác đồ điều trị bao gồm:
-1. Hướng điều trị chính
-2. Thuốc gợi ý (nếu có)
-3. Chế độ sinh hoạt và theo dõi
-4. Các dấu hiệu cần tái khám ngay
-Lưu ý: Đây CHỈ là gợi ý, bác sĩ phải xem xét và quyết định."""
+TREATMENT_SYSTEM_PROMPT = """Ban la tro ly AI ho tro bac si tai benh vien MediFlow.
+Dua tren chan doan va thong tin lam sang, de xuat:
+1. Huong dieu tri chinh
+2. Thuoc goi y neu can
+3. Che do theo doi va cham soc
+4. Dau hieu can tai kham gap
+Luu y: day la goi y ho tro, bac si quyet dinh phac do cuoi cung."""
 
-PRESCRIPTION_SYSTEM_PROMPT = """Bạn là trợ lý AI hỗ trợ bác sĩ kê đơn thuốc tại bệnh viện MediFlow.
-Tạo đơn thuốc mẫu theo định dạng JSON:
+PRESCRIPTION_SYSTEM_PROMPT = """Ban la tro ly AI ho tro ke don tai benh vien MediFlow.
+Tra ve ket qua theo JSON:
 {
   "medications": [
-    {"name": "Tên thuốc", "dosage": "Liều lượng", "frequency": "Tần suất", "duration": "Thời gian", "notes": "Ghi chú"}
+    {"name":"", "dosage":"", "frequency":"", "duration":"", "notes":""}
   ],
-  "instructions": "Hướng dẫn chung",
-  "follow_up": "Lịch tái khám"
+  "instructions": "",
+  "follow_up": ""
 }
-Chỉ trả về JSON, không thêm text khác."""
+Chi tra ve JSON, khong them text ngoai JSON."""
 
-LAB_SYSTEM_PROMPT = """Bạn là trợ lý AI hỗ trợ bác sĩ tại bệnh viện MediFlow.
-Dựa trên triệu chứng và chẩn đoán, gợi ý các xét nghiệm cần thiết:
-1. Xét nghiệm máu/nước tiểu
-2. Chẩn đoán hình ảnh (X-quang, siêu âm, CT...)
-3. Xét nghiệm đặc hiệu khác
-Giải thích ngắn lý do cần làm từng loại."""
+LAB_SYSTEM_PROMPT = """Ban la tro ly AI goi y xet nghiem cho bac si.
+Dua tren trieu chung va chan doan, de xuat:
+1. Xet nghiem can thiet
+2. Chan doan hinh anh neu can
+3. Ly do ngan gon cho moi de xuat
+Chi tra ve noi dung chuyen mon ngan gon va ro rang."""
 
-VOICE_TO_EMR_SYSTEM_PROMPT = """Bạn là AI chuyển đổi hội thoại bác sĩ-bệnh nhân thành hồ sơ bệnh án điện tử.
-Phân tích transcript và trích xuất thông tin theo JSON:
+DRUG_SUGGEST_SYSTEM_PROMPT = """Ban la bac si/duoc si lam sang AI tai Viet Nam.
+Nhiem vu: goi y danh sach thuoc kha thi dua tren chan doan/trieu chung/ke hoach dieu tri.
+Tra ve JSON:
 {
-  "chief_complaint": "Lý do khám",
-  "symptoms": "Triệu chứng chi tiết",
-  "duration": "Thời gian xuất hiện",
-  "medical_history": "Tiền sử bệnh",
-  "allergies": "Dị ứng",
-  "current_medications": "Thuốc đang dùng",
-  "physical_exam": "Khám lâm sàng",
-  "preliminary_diagnosis": "Chẩn đoán sơ bộ",
-  "treatment_plan": "Kế hoạch điều trị"
+  "suggestions": [
+    {
+      "name": "Ten thuoc",
+      "class": "Nhom thuoc",
+      "reason": "Ly do goi y",
+      "priority": "first-line|adjunct|symptomatic|avoid",
+      "cautions": []
+    }
+  ],
+  "warnings": []
 }
-Chỉ trả về JSON. Điền "Không có thông tin" nếu không tìm thấy."""
+Chi tra ve JSON, khong kem noi dung ngoai JSON."""
 
-SOAP_SYSTEM_PROMPT = """Bạn là trợ lý AI hỗ trợ bác sĩ tại bệnh viện MediFlow.
-Tóm tắt thông tin bệnh nhân theo định dạng SOAP chuẩn y khoa:
-- S (Subjective): Triệu chứng chủ quan bệnh nhân mô tả
-- O (Objective): Dấu hiệu khách quan, kết quả xét nghiệm
-- A (Assessment): Đánh giá, chẩn đoán
-- P (Plan): Kế hoạch điều trị"""
+VOICE_TO_EMR_SYSTEM_PROMPT = """Ban la AI chuyen doi hoi thoai bac si-benh nhan thanh ho so benh an dien tu.
+Phan tich transcript va trich xuat thong tin theo JSON:
+{
+  "chief_complaint": "Ly do kham",
+  "symptoms": "Trieu chung chi tiet",
+  "duration": "Thoi gian xuat hien",
+  "medical_history": "Tien su benh",
+  "allergies": "Di ung",
+  "current_medications": "Thuoc dang dung",
+  "physical_exam": "Kham lam sang",
+  "preliminary_diagnosis": "Chan doan so bo",
+  "treatment_plan": "Ke hoach dieu tri"
+}
+Chi tra ve JSON. Neu thieu thong tin, de trong hoac ghi 'Khong co thong tin'."""
 
-DOCASSIST_CHAT_SYSTEM_PROMPT = """Bạn là DocAssist - Trợ lý AI hỗ trợ bác sĩ tại bệnh viện MediFlow.
-Bạn có thể:
-- Trả lời câu hỏi y khoa chuyên sâu
-- Gợi ý chẩn đoán và điều trị
-- Giải thích kết quả xét nghiệm
-- Hỗ trợ tư vấn phác đồ điều trị
-Ngôn ngữ: Tiếng Việt, chuyên nghiệp.
-Luôn nhắc bác sĩ rằng đây là gợi ý AI, quyết định cuối cùng thuộc về bác sĩ."""
+SOAP_SYSTEM_PROMPT = """Ban la tro ly AI ho tro bac si.
+Tom tat thong tin benh nhan theo SOAP:
+- S (Subjective): trieu chung chu quan
+- O (Objective): dau hieu khach quan va ket qua can lam sang
+- A (Assessment): danh gia va chan doan
+- P (Plan): huong dieu tri va theo doi"""
+
+DOCASSIST_CHAT_SYSTEM_PROMPT = """Ban la DocAssist - tro ly AI ho tro bac si tai MediFlow.
+Ban co the:
+- Tra loi cau hoi y khoa chuyen sau
+- Goi y chan doan va dieu tri
+- Giai thich ket qua xet nghiem
+- Ho tro lap ke hoach dieu tri
+Van phong: tieng Viet, ro rang, chuyen nghiep.
+Luon nhac rang day la goi y AI, quyet dinh cuoi cung thuoc ve bac si."""
+

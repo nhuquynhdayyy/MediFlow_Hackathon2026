@@ -11,7 +11,7 @@ export default function HistoryModal() {
         <div className="flex items-center justify-between mb-4 flex-none">
           <h3 className="font-semibold text-slate-800 flex items-center gap-2">
             <History size={18} className="text-sky-500" />
-            Lịch sử khám — {selectedPatient?.name}
+            Lich su kham - {selectedPatient?.name}
           </h3>
           <button onClick={closeHistory} className="text-slate-400 hover:text-slate-600">
             <X size={18} />
@@ -20,7 +20,7 @@ export default function HistoryModal() {
 
         <div className="flex-1 overflow-y-auto space-y-3">
           {historyData.length === 0 ? (
-            <div className="text-center text-slate-400 py-8 text-sm">Chưa có lịch sử khám</div>
+            <div className="text-center text-slate-400 py-8 text-sm">Chua co lich su kham</div>
           ) : (
             historyData.map((h, i) => (
               <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-2">
@@ -35,11 +35,11 @@ export default function HistoryModal() {
                   </div>
                 </div>
                 <div>
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Chẩn đoán</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Chan doan</span>
                   <p className="text-sm text-slate-700 mt-0.5">{h.diagnosis}</p>
                 </div>
                 <div>
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Điều trị</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Dieu tri</span>
                   <p className="text-sm text-slate-600 mt-0.5">{h.treatment}</p>
                 </div>
               </div>
@@ -50,3 +50,4 @@ export default function HistoryModal() {
     </div>
   )
 }
+

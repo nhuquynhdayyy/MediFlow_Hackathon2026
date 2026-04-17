@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react'
+﻿import { useState, useRef, useCallback } from 'react'
 
 /**
- * useVoice — Web Speech API hook
+ * useVoice â€” Web Speech API hook
  * Returns { isRecording, transcript, start, stop, reset, supported }
  */
 export function useVoice({ onTranscriptUpdate } = {}) {
@@ -30,7 +30,7 @@ export function useVoice({ onTranscriptUpdate } = {}) {
       onTranscriptUpdate?.(full)
     }
     rec.onerror = () => setIsRecording(false)
-    rec.onend   = () => setIsRecording(false)
+    rec.onend = () => setIsRecording(false)
 
     rec.start()
     recognitionRef.current = rec
@@ -49,3 +49,4 @@ export function useVoice({ onTranscriptUpdate } = {}) {
 
   return { isRecording, transcript, start, stop, reset, supported }
 }
+

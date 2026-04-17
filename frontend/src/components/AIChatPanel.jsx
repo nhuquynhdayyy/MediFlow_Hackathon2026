@@ -4,17 +4,17 @@ import { useStore } from '../store'
 import { docChatStream, aiDiagnosis, aiTreatment, aiPrescription, aiLabSuggestions } from '../services/api'
 
 const AI_ACTIONS = [
-  { key: 'diagnosis',    label: 'Chẩn đoán',    icon: <Stethoscope size={13} />, color: 'text-purple-600 bg-purple-50 hover:bg-purple-100' },
-  { key: 'treatment',    label: 'Điều trị',      icon: <Wand2 size={13} />,       color: 'text-sky-600 bg-sky-50 hover:bg-sky-100' },
-  { key: 'prescription', label: 'Đơn thuốc',     icon: <Pill size={13} />,        color: 'text-teal-600 bg-teal-50 hover:bg-teal-100' },
-  { key: 'lab',          label: 'Xét nghiệm',    icon: <FlaskConical size={13} />, color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
+  { key: 'diagnosis', label: 'Chan doan', icon: <Stethoscope size={13} />, color: 'text-purple-600 bg-purple-50 hover:bg-purple-100' },
+  { key: 'treatment', label: 'Dieu tri', icon: <Wand2 size={13} />, color: 'text-sky-600 bg-sky-50 hover:bg-sky-100' },
+  { key: 'prescription', label: 'Don thuoc', icon: <Pill size={13} />, color: 'text-teal-600 bg-teal-50 hover:bg-teal-100' },
+  { key: 'lab', label: 'Xet nghiem', icon: <FlaskConical size={13} />, color: 'text-amber-600 bg-amber-50 hover:bg-amber-100' },
 ]
 
 export default function AIChatPanel() {
   const { apiKey, model, docMessages, addDocMessage, docLoading, setDocLoading,
-          selectedPatient, emrData, setAiResult } = useStore()
-  const [input, setInput]         = useState('')
-  const [streaming, setStreaming]  = useState('')
+    selectedPatient, emrData, setAiResult } = useStore()
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState('')
   const [actionLoading, setActionLoading] = useState(null)
   const bottomRef = useRef(null)
 
@@ -25,7 +25,7 @@ export default function AIChatPanel() {
   const send = async (text) => {
     const msg = (text || input).trim()
     if (!msg || docLoading) return
-    if (!apiKey) { alert('Vui lòng nhập API Key'); return }
+    if (!apiKey) { alert('Vui long nhap API Key'); return }
 
     setInput('')
     addDocMessage({ role: 'user', content: msg })
@@ -44,31 +44,31 @@ export default function AIChatPanel() {
       (err) => {
         setStreaming('')
         setDocLoading(false)
-        addDocMessage({ role: 'assistant', content: `⚠️ ${err}`, isError: true })
+        addDocMessage({ role: 'assistant', content: `Loi: ${err}`, isError: true })
       },
     )
   }
 
   const runAiAction = async (actionKey) => {
     if (!selectedPatient || !apiKey) {
-      alert(!apiKey ? 'Vui lòng nhập API Key' : 'Chọn bệnh nhân trước')
+      alert(!apiKey ? 'Vui long nhap API Key' : 'Chon benh nhan truoc')
       return
     }
     const ctx = { ...selectedPatient, ...emrData }
-    const prompt = `Bệnh nhân: ${selectedPatient.name}, ${selectedPatient.age} tuổi
-Triệu chứng: ${emrData.symptoms || selectedPatient.symptoms}
-Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
+    const prompt = `Benh nhan: ${selectedPatient.name}, ${selectedPatient.age} tuoi
+Trieu chung: ${emrData.symptoms || selectedPatient.symptoms}
+Tien su: ${emrData.medical_history || selectedPatient.medical_history}`
 
     setActionLoading(actionKey)
     try {
       let r
-      if (actionKey === 'diagnosis')    r = await aiDiagnosis(prompt, ctx, apiKey, model)
-      if (actionKey === 'treatment')    r = await aiTreatment(prompt, ctx, apiKey, model)
+      if (actionKey === 'diagnosis') r = await aiDiagnosis(prompt, ctx, apiKey, model)
+      if (actionKey === 'treatment') r = await aiTreatment(prompt, ctx, apiKey, model)
       if (actionKey === 'prescription') r = await aiPrescription(prompt, ctx, apiKey, model)
-      if (actionKey === 'lab')          r = await aiLabSuggestions(prompt, ctx, apiKey, model)
+      if (actionKey === 'lab') r = await aiLabSuggestions(prompt, ctx, apiKey, model)
 
       const resultKey = actionKey === 'lab' ? 'labResult' :
-                        actionKey + 'Result'
+        actionKey + 'Result'
       setAiResult(resultKey, r.result)
       addDocMessage({
         role: 'assistant',
@@ -76,7 +76,7 @@ Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
         actionType: actionKey,
       })
     } catch (e) {
-      addDocMessage({ role: 'assistant', content: `⚠️ Lỗi: ${e.message}`, isError: true })
+      addDocMessage({ role: 'assistant', content: `Loi: ${e.message}`, isError: true })
     } finally {
       setActionLoading(null)
     }
@@ -111,7 +111,7 @@ Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
         {docMessages.length === 0 && !streaming && (
           <div className="text-center text-slate-400 text-xs py-8">
             <Bot size={28} className="mx-auto mb-2 opacity-30" />
-            Hỏi DocAssist AI hoặc nhấn nút gợi ý nhanh ở trên
+            Hoi DocAssist AI hoac nhan nut goi y nhanh o tren
           </div>
         )}
         {docMessages.map((m, i) => (
@@ -121,13 +121,12 @@ Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
                 <Bot size={12} className="text-white" />
               </div>
             )}
-            <div className={`rounded-xl px-3 py-2 text-xs max-w-full leading-relaxed whitespace-pre-wrap ${
-              m.role === 'user'
+            <div className={`rounded-xl px-3 py-2 text-xs max-w-full leading-relaxed whitespace-pre-wrap ${m.role === 'user'
                 ? 'bg-teal-500 text-white rounded-tr-sm'
                 : m.isError
-                ? 'bg-red-50 text-red-700 border border-red-200'
-                : 'bg-slate-50 text-slate-700 border border-slate-200 rounded-tl-sm'
-            }`}>
+                  ? 'bg-red-50 text-red-700 border border-red-200'
+                  : 'bg-slate-50 text-slate-700 border border-slate-200 rounded-tl-sm'
+              }`}>
               {m.content}
             </div>
             {m.role === 'user' && (
@@ -174,7 +173,7 @@ Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Hỏi DocAssist..."
+            placeholder="Hoi DocAssist..."
             className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400"
           />
           <button
@@ -189,3 +188,4 @@ Tiền sử: ${emrData.medical_history || selectedPatient.medical_history}`
     </div>
   )
 }
+

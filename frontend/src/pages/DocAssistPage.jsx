@@ -8,22 +8,19 @@ import QRModal, { QRButton } from '../components/QRModal'
 import HistoryModal from '../components/HistoryModal'
 
 export default function DocAssistPage() {
-  const { showHistory, setHistoryData, showQR } = useStore()
-  const { selectedPatient, historyData, showHistory: sh, closeHistory } = useStore()
+  const { selectedPatient, historyData } = useStore()
 
   return (
     <div className="flex h-full overflow-hidden">
-
-      {/* ── Col 1: Patient queue ── */}
+      {/* Col 1: Patient queue */}
       <aside className="w-56 flex-none bg-white border-r border-slate-200 overflow-hidden flex flex-col">
         <PatientQueue />
       </aside>
 
-      {/* ── Col 2: EMR form ── */}
+      {/* Col 2: EMR form */}
       <section className="w-80 flex-none bg-white border-r border-slate-200 overflow-hidden flex flex-col">
-        {/* EMR header actions */}
         <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700">Hồ sơ bệnh án (EMR)</h2>
+          <h2 className="text-sm font-semibold text-slate-700">Ho so benh an (EMR)</h2>
           <div className="flex gap-1.5 items-center">
             <HistoryButton />
             <QRButton />
@@ -34,19 +31,16 @@ export default function DocAssistPage() {
         </div>
       </section>
 
-      {/* ── Col 3: Voice + AI tabs ── */}
+      {/* Col 3: Voice + AI tabs */}
       <section className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-        {/* Voice recorder */}
         <div className="flex-none bg-white border-b border-slate-200">
           <VoiceRecorder />
         </div>
-        {/* AI chat panel fills remaining space */}
         <div className="flex-1 overflow-hidden bg-white mt-px">
           <AIChatPanel />
         </div>
       </section>
 
-      {/* Modals */}
       <QRModal />
       <HistoryModal />
     </div>
@@ -67,7 +61,8 @@ function HistoryButton() {
       className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium transition-colors border border-sky-200 disabled:opacity-40"
     >
       <History size={13} />
-      Lịch sử
+      Lich su
     </button>
   )
 }
+

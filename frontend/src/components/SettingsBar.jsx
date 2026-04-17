@@ -5,16 +5,16 @@ import { healthCheck } from '../services/api'
 
 const MODELS = [
   { value: 'Llama-3.3-70B-Instruct', label: 'Llama 3.3 70B' },
-  { value: 'SaoLa3.1-medium',        label: 'SaoLa 3.1 (VI)' },
-  { value: 'QwQ-32B',                label: 'QwQ 32B' },
-  { value: 'DeepSeek-R1',            label: 'DeepSeek R1' },
+  { value: 'SaoLa3.1-medium', label: 'SaoLa 3.1 (VI)' },
+  { value: 'QwQ-32B', label: 'QwQ 32B' },
+  { value: 'DeepSeek-R1', label: 'DeepSeek R1' },
 ]
 
 export default function SettingsBar() {
   const { apiKey, model, setApiKey, setModel } = useStore()
   const [showKey, setShowKey] = useState(false)
-  const [open, setOpen]       = useState(false)
-  const [status, setStatus]   = useState(null) // null | 'loading' | 'ok' | 'error'
+  const [open, setOpen] = useState(false)
+  const [status, setStatus] = useState(null) // null | 'loading' | 'ok' | 'error'
 
   const testConnection = async () => {
     setStatus('loading')
@@ -35,12 +35,12 @@ export default function SettingsBar() {
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm transition-colors"
       >
         <Settings size={14} />
-        Cài đặt
+        Cai dat
       </button>
 
       {open && (
         <div className="absolute right-0 top-10 w-80 bg-white border border-slate-200 rounded-xl shadow-xl p-4 z-50 space-y-3">
-          <h3 className="font-semibold text-slate-800 text-sm">⚙️ Cấu hình AI</h3>
+          <h3 className="font-semibold text-slate-800 text-sm">Cau hinh AI</h3>
 
           {/* API Key */}
           <div>
@@ -85,15 +85,15 @@ export default function SettingsBar() {
             className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
           >
             {status === 'loading' && <Loader size={14} className="animate-spin" />}
-            {status === 'ok'      && <CheckCircle size={14} />}
-            {status === 'error'   && <XCircle size={14} />}
-            {status === 'ok'    ? 'Kết nối OK!' :
-             status === 'error' ? 'Lỗi kết nối' :
-             'Test kết nối'}
+            {status === 'ok' && <CheckCircle size={14} />}
+            {status === 'error' && <XCircle size={14} />}
+            {status === 'ok' ? 'Ket noi OK!' :
+              status === 'error' ? 'Loi ket noi' :
+                'Test ket noi'}
           </button>
 
           <p className="text-xs text-slate-400 text-center">
-            Lấy API key tại{' '}
+            Láº¥y API key táº¡i{' '}
             <a href="https://marketplace.fptcloud.com" target="_blank" rel="noreferrer" className="text-sky-500 underline">
               marketplace.fptcloud.com
             </a>
@@ -106,3 +106,4 @@ export default function SettingsBar() {
     </div>
   )
 }
+

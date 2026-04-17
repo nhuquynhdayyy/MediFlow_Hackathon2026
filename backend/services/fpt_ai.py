@@ -1,4 +1,4 @@
-"""FPT AI Marketplace service - gọi LLM API."""
+﻿"""FPT AI Marketplace service - gá»i LLM API."""
 import httpx
 import json
 import logging
@@ -17,12 +17,12 @@ class FPTAIService:
         user_message: str,
         context: dict = None,
     ) -> str:
-        """Gọi FPT AI API, trả về text response."""
+        """Gá»i FPT AI API, tráº£ vá» text response."""
         messages = [{"role": "system", "content": system_prompt}]
         if context:
             messages.append({
                 "role": "user",
-                "content": f"Thông tin bệnh nhân:\n{json.dumps(context, ensure_ascii=False)}"
+                "content": f"ThÃ´ng tin bá»‡nh nhÃ¢n:\n{json.dumps(context, ensure_ascii=False)}"
             })
         messages.append({"role": "user", "content": user_message})
 
@@ -43,7 +43,7 @@ class FPTAIService:
         system_prompt: str,
         user_message: str,
     ):
-        """Gọi FPT AI API với streaming, yield từng chunk text."""
+        """Gá»i FPT AI API vá»›i streaming, yield tá»«ng chunk text."""
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -69,3 +69,4 @@ class FPTAIService:
                                 yield content
                         except Exception:
                             pass
+
