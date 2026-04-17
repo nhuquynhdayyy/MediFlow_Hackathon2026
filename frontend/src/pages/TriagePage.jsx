@@ -194,7 +194,7 @@ export default function TriagePage() {
         session_id: triageSession,
       })
       setConfirmedBookings(prev => new Set([...prev, msgIndex]))
-      const apptId = res.data?.appointment_id || 'N/A'
+      const apptId = res.appointment_id || 'N/A'
       addMessageAndSync({
         role: 'assistant',
         content: `✅ Đặt lịch thành công!\n📋 Mã lịch hẹn: ${apptId}\n🏥 ${bookingData.department}\n📅 ${bookingData.scheduled_time} ngày ${bookingData.scheduled_date}\n📞 SĐT: ${bookingData.patient_phone}`,
