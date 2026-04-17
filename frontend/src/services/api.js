@@ -50,5 +50,3 @@ export async function* streamChat(data) {
     }
   }
 }
-
-export const aiDetectRoles = (data) => api.post('/ai/detect-roles', data).then(r => r.data)
