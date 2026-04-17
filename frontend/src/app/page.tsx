@@ -87,6 +87,7 @@ export default function Home() {
   const [chatInput, setChatInput] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [activeNavigatorPanel, setActiveNavigatorPanel] = useState<"selector" | "route" | "checklist" | "chat">("selector");
+  const [activeBlockFilter, setActiveBlockFilter] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<Array<{ role: ChatRole; text: string }>>([
     { role: "bot", text: "Xin chào, bạn có thể hỏi: 'Khoa Tim mạch ở tầng mấy?'" },
   ]);
@@ -221,21 +222,31 @@ export default function Home() {
 
   const nextStep = routeTimeline.find((s) => !completedSet.has(s));
   const allDone = routeTimeline.length > 0 && routeTimeline.every((s) => completedSet.has(s));
-  const progressPct = routeTimeline.length ? Math.round((completedSet.size / routeTimeline.length) * 100) : 0;
+  
+  const completedCount = routeTimeline.filter((s) => completedSet.has(s)).length;
+  const progressPct = routeTimeline.length ? Math.round((completedCount / routeTimeline.length) * 100) : 0;
+  
   const routeOrderMap = useMemo(
     () => Object.fromEntries(routeTimeline.map((step, idx) => [step, idx + 1])),
     [routeTimeline]
   );
   const floorPlan = useMemo(() => {
-    const buckets: Record<number, string[]> = {};
+    const buckets: Record<string, Record<number, string[]>> = {};
     for (const item of departmentLoad) {
+      const block = item.block || "A (Khác)";
       const floor = typeof item.floor === "number" ? item.floor : 1;
-      if (!buckets[floor]) buckets[floor] = [];
-      buckets[floor].push(item.department);
+      if (!buckets[block]) buckets[block] = {};
+      if (!buckets[block][floor]) buckets[block][floor] = [];
+      buckets[block][floor].push(item.department);
     }
     return Object.entries(buckets)
-      .map(([floor, rooms]) => ({ floor: Number(floor), rooms: rooms.sort((a, b) => viName(a).localeCompare(viName(b))) }))
-      .sort((a, b) => a.floor - b.floor);
+      .map(([block, floorsObj]) => {
+        const floors = Object.entries(floorsObj)
+          .map(([floor, rooms]) => ({ floor: Number(floor), rooms: rooms.sort((a, b) => viName(a).localeCompare(viName(b))) }))
+          .sort((a, b) => a.floor - b.floor);
+        return { block, floors };
+      })
+      .sort((a, b) => a.block.localeCompare(b.block));
   }, [departmentLoad]);
 
   const handleChatAsk = async () => {
@@ -481,58 +492,90 @@ export default function Home() {
             )}
             {routeTimeline.length > 0 && (
               <div className="border border-slate-200 rounded-xl p-3 bg-white">
-                <p className="font-semibold text-sm mb-2">Mini-map theo tầng</p>
+                <div className="flex flex-col sm:flex-row items-baseline sm:justify-between mb-2">
+                  <p className="font-semibold text-sm">Mini-map theo Khu và Tầng</p>
+                  <div className="flex bg-slate-100 p-1 rounded-lg gap-1 mt-2 sm:mt-0">
+                    {floorPlan.map(b => (
+                      <button
+                        key={`tab-${b.block}`}
+                        onClick={() => setActiveBlockFilter(activeBlockFilter === b.block ? null : b.block)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                          activeBlockFilter === b.block || (!activeBlockFilter && floorPlan.length === 1)
+                            ? "bg-white text-sky-700 shadow-sm border border-slate-200"
+                            : "text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {b.block}
+                      </button>
+                    ))}
+                    {activeBlockFilter && floorPlan.length > 1 && (
+                      <button
+                         onClick={() => setActiveBlockFilter(null)}
+                         className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800"
+                      >
+                         Tất cả
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <div className="text-xs text-slate-500 mb-2">
-                  Mô phỏng bệnh viện dạng xếp chồng theo tầng. Phòng trong lộ trình được tô xanh và gắn số thứ tự.
+                  Mô phỏng bệnh viện dạng xếp chồng theo Khu -{'>'} Tầng. Phòng trong lộ trình được tô xanh và gắn số thứ tự.
                 </div>
                 <div className="relative rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-3">
-                  <div className="relative max-h-72 overflow-y-auto pr-1">
-                    <div className="absolute left-[58px] top-0 bottom-0 w-[2px] bg-slate-300" />
-                    <div className="space-y-2">
-                      {[...floorPlan]
-                        .sort((a, b) => b.floor - a.floor)
-                        .map((floorItem) => (
-                          <div
-                            key={`stack-floor-${floorItem.floor}`}
-                            className="relative grid grid-cols-[52px,24px,1fr] items-stretch gap-2"
-                          >
-                            <div className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-center">
-                              <p className="text-[11px] text-slate-500">Tầng</p>
-                              <p className="text-sm font-bold text-slate-700">{floorItem.floor}</p>
-                            </div>
-                            <div className="flex items-center justify-center">
-                              <div className="w-4 h-4 rounded-full border-2 border-slate-300 bg-white" />
-                            </div>
-                            <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {floorItem.rooms.map((room) => {
-                                  const order = routeOrderMap[room];
-                                  const inRoute = Boolean(order);
-                                  return (
-                                    <div
-                                      key={`stack-room-${floorItem.floor}-${room}`}
-                                      className={`rounded-md border px-2 py-1.5 text-xs flex items-center justify-between ${
-                                        inRoute
-                                          ? "bg-sky-100 border-sky-400 text-sky-800"
-                                          : "bg-slate-50 border-slate-200 text-slate-500"
-                                      }`}
-                                    >
-                                      <span className="truncate pr-1">
-                                        {viName(room)} ({DEPT_META[room]?.roomCode || "N/A"})
-                                      </span>
-                                      {inRoute && (
-                                        <span className="w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-bold flex items-center justify-center">
-                                          {order}
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                  <div className="relative max-h-96 overflow-y-auto pr-1 space-y-4">
+                    {floorPlan.filter(b => !activeBlockFilter || b.block === activeBlockFilter).map((blockItem) => (
+                      <div key={`block-${blockItem.block}`} className="border border-slate-200 rounded-xl bg-white p-3 shadow-sm">
+                        <h3 className="font-bold text-slate-800 mb-3 bg-slate-50 py-1.5 px-3 rounded-lg border-l-4 border-sky-600">
+                          Khu {blockItem.block}
+                        </h3>
+                        <div className="relative space-y-2">
+                          <div className="absolute left-[58px] top-0 bottom-0 w-[2px] bg-slate-200" />
+                          {[...blockItem.floors]
+                            .sort((a, b) => b.floor - a.floor)
+                            .map((floorItem) => (
+                              <div
+                                key={`stack-floor-${blockItem.block}-${floorItem.floor}`}
+                                className="relative grid grid-cols-[52px,24px,1fr] items-stretch gap-2"
+                              >
+                                <div className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-center">
+                                  <p className="text-[11px] text-slate-500">Tầng</p>
+                                  <p className="text-sm font-bold text-slate-700">{floorItem.floor}</p>
+                                </div>
+                                <div className="flex items-center justify-center">
+                                  <div className="w-4 h-4 rounded-full border-2 border-slate-300 bg-white" />
+                                </div>
+                                <div className="rounded-lg border border-slate-200 bg-white px-2 py-2">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {floorItem.rooms.map((room) => {
+                                      const order = routeOrderMap[room];
+                                      const inRoute = Boolean(order);
+                                      return (
+                                        <div
+                                          key={`stack-room-${blockItem.block}-${floorItem.floor}-${room}`}
+                                          className={`rounded-md border px-2 py-1.5 text-xs flex items-center justify-between ${
+                                            inRoute
+                                              ? "bg-sky-100 border-sky-400 text-sky-800"
+                                              : "bg-slate-50 border-slate-200 text-slate-500"
+                                          }`}
+                                        >
+                                          <span className="truncate pr-1">
+                                            {viName(room)} ({DEPT_META[room]?.roomCode || "N/A"})
+                                          </span>
+                                          {inRoute && (
+                                            <span className="w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-bold flex items-center justify-center">
+                                              {order}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 max-h-32 overflow-y-auto">
                     {routeTimeline.map((step, idx) => (

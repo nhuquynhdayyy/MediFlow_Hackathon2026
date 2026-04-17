@@ -6,6 +6,8 @@ from datetime import datetime
 from random import Random
 from typing import Dict, List
 
+from app.services.lab_data import LAB_DATABASE, TEST_DB
+
 
 @dataclass
 class DepartmentSeed:
@@ -18,8 +20,6 @@ class DepartmentSeed:
 
 DEPARTMENT_SEEDS: List[DepartmentSeed] = [
     DepartmentSeed("Registration", 6, 5, 8, 1),
-    DepartmentSeed("Lab", 7, 12, 24, 1),
-    DepartmentSeed("Imaging", 5, 18, 15, 1),
     DepartmentSeed("Internal", 8, 16, 18, 2),
     DepartmentSeed("ENT", 4, 15, 12, 2),
     DepartmentSeed("Cardiology", 6, 20, 17, 5),
@@ -38,8 +38,6 @@ DEPARTMENT_SEEDS: List[DepartmentSeed] = [
 ]
 
 ORDER_TO_DEPARTMENT = {
-    "Lab": "Lab",
-    "Imaging": "Imaging",
     "Internal": "Internal",
     "ENT": "ENT",
     "Cardio": "Cardiology",
@@ -48,15 +46,21 @@ ORDER_TO_DEPARTMENT = {
     "Pediatrics": "Pediatrics",
     "OBGYN": "OBGYN",
 }
+# Dynamically map tests to Lab or Imaging based on category
+for test_name, info in TEST_DB.items():
+    if info.get("category") == "Chẩn đoán hình ảnh":
+        ORDER_TO_DEPARTMENT[test_name] = "Imaging"
+    else:
+        ORDER_TO_DEPARTMENT[test_name] = "Lab"
 
 MEDICAL_PREREQUISITES = {
-    "Internal": ["Lab"],
-    "Cardiology": ["Lab", "Imaging"],
-    "Neurology": ["Imaging"],
-    "Orthopedics": ["Imaging"],
-    "ENT": ["Lab"],
-    "Oncology": ["Lab", "Imaging"],
-    "OBGYN": ["Lab"],
+    "Internal": ["Công thức máu toàn phần (CBC)", "AST (SGOT)"],
+    "Cardiology": ["Đường huyết lúc đói (FBS)", "Điện tâm đồ (ECG)"],
+    "Neurology": ["MRI não"],
+    "Orthopedics": ["X-quang khớp"],
+    "ENT": ["Công thức máu toàn phần (CBC)"],
+    "Oncology": ["Sinh hóa", "Chẩn đoán hình ảnh"],
+    "OBGYN": ["Beta-hCG định lượng", "Siêu âm thai"],
 }
 
 TRAVEL_MINUTES = {
@@ -67,13 +71,13 @@ TRAVEL_MINUTES = {
 }
 
 EMR_MOCK = {
-    "P001": {"patient_id": "P001", "orders": ["Lab", "Imaging", "Internal"]},
-    "P002": {"patient_id": "P002", "orders": ["Lab", "ENT"]},
-    "P003": {"patient_id": "P003", "orders": ["Lab", "Cardio"]},
+    "P001": {"patient_id": "P001", "orders": ["Công thức máu toàn phần (CBC)", "AST (SGOT)", "Điện tâm đồ (ECG)", "Internal"]},
+    "P002": {"patient_id": "P002", "orders": ["Xét nghiệm phân (tìm máu ẩn)", "Nội soi dạ dày (Gastroscopy)", "ENT"]},
+    "P003": {"patient_id": "P003", "orders": ["Đường huyết lúc đói (FBS)", "HbA1c", "Cardio"]},
 }
 
 PATIENT_STATE: Dict[str, Dict] = {
-    "P001": {"current_step": "Lab", "completed": []},
+    "P001": {"current_step": "Registration", "completed": []},
     "P002": {"current_step": "Registration", "completed": []},
     "P003": {"current_step": "Registration", "completed": []},
 }
@@ -97,6 +101,31 @@ def get_departments_snapshot(hour_offset: int = 0) -> List[Dict]:
     pattern = HOURLY_PATTERN.get(now_hour, 0.75)
     rng = Random(now_hour + 2026)
     rows: List[Dict] = []
+    
+    # Simple block mapping for generic departments not in TEST_DB
+    seed_blocks = {
+        "Registration": "A1 (Khác)",
+        "Internal": "A1 (Nội tổng quát)",
+        "Cardiology": "A1 (Nội tổng quát)",
+        "Neurology": "A1 (Nội tổng quát)",
+        "Gastroenterology": "A1 (Nội tổng quát)",
+        "Pulmonology": "A1 (Nội tổng quát)",
+        "Endocrinology": "A1 (Nội tổng quát)",
+        "Nephrology": "A1 (Nội tổng quát)",
+        "Oncology": "A1 (Nội tổng quát)",
+        "ENT": "A1 (Nội tổng quát)",
+        "Dermatology": "A1 (Nội tổng quát)",
+        
+        "Lab": "B1 (Cận lâm sàng)",
+        "Imaging": "B1 (Cận lâm sàng)",
+        "Pharmacy": "B1 (Cận lâm sàng)",
+        
+        "Orthopedics": "C1 (Sản/Nhi/Khác)",
+        "Rehabilitation": "C1 (Sản/Nhi/Khác)",
+        "Pediatrics": "C1 (Sản/Nhi/Khác)",
+        "OBGYN": "C1 (Sản/Nhi/Khác)"
+    }
+    
     for seed in DEPARTMENT_SEEDS:
         jitter = 0.85 + rng.random() * 0.35
         waiting = int(seed.base_waiting * pattern * jitter)
@@ -115,8 +144,36 @@ def get_departments_snapshot(hour_offset: int = 0) -> List[Dict]:
                 "doctors": seed.doctors,
                 "avg_service_minutes": seed.avg_service_minutes,
                 "floor": seed.floor,
+                "block": seed_blocks.get(seed.name, "A1 (Khác)"),
             }
         )
+    
+    # Add dynamic lab departments
+    for test_name, info in TEST_DB.items():
+        jitter = 0.85 + rng.random() * 0.35
+        cat = info.get("category", "")
+        if cat == "Chẩn đoán hình ảnh":
+            base_wait = 25
+        elif ORDER_TO_DEPARTMENT.get(test_name) == "Lab":
+            base_wait = 8
+        else:
+            base_wait = 15
+            
+        waiting = int(base_wait * pattern * jitter)
+        in_service = max(1, int(3 * (0.75 + rng.random() * 0.25)))
+        rows.append(
+            {
+                "department": test_name,
+                "waiting": waiting,
+                "in_service": in_service,
+                "doctors": 3,
+                "avg_service_minutes": 10,
+                "floor": info.get("floor", 1),
+                "block": info.get("block", "A1 (Khác)"),
+                "category": info.get("category", "General")
+            }
+        )
+
     return rows
 
 

@@ -8,6 +8,7 @@ from app.services.fpt_ai import call_fpt_ai, extract_text_from_response
 from app.services.load_predictor import get_department_load
 from app.services.mock_data_store import get_emr_orders, get_patient_state, update_patient_state
 from app.services.route_optimizer import map_orders_to_departments, optimize_route
+from app.services.lab_data import TEST_DB
 
 router = APIRouter()
 
@@ -100,12 +101,24 @@ def patient_chat(patient_id: str, payload: PatientChatRequest):
     context_lines = []
     for dep in departments:
         floor = floor_map.get(dep, "?")
-        context_lines.append(f"- {DEPT_VI_NAME.get(dep, dep)} ({dep}): tầng {floor}")
+        if dep in TEST_DB:
+            category = TEST_DB[dep].get("category", "")
+            block = TEST_DB[dep].get("block", "A")
+            context_lines.append(f"- Phòng: {dep} | Khu/Block {block} - Tầng {floor} (Chuyên khoa: {category})")
+        else:
+            context_lines.append(f"- {DEPT_VI_NAME.get(dep, dep)} ({dep}): tầng {floor}")
 
     full_catalog = []
     for dep in all_departments:
+        if dep in TEST_DB and dep not in departments:
+            continue # Skip tests not assigned to patient to save tokens
         floor = floor_map.get(dep, "?")
-        full_catalog.append(f"- {DEPT_VI_NAME.get(dep, dep)} ({dep}): tầng {floor}")
+        if dep in TEST_DB:
+            category = TEST_DB[dep].get("category", "")
+            block = TEST_DB[dep].get("block", "A")
+            full_catalog.append(f"- Phòng: {dep} | Khu/Block {block} - Tầng {floor} ({category})")
+        else:
+            full_catalog.append(f"- {DEPT_VI_NAME.get(dep, dep)} ({dep}): tầng {floor}")
 
     history_msgs = []
     for msg in payload.history[-8:]:
@@ -116,8 +129,9 @@ def patient_chat(patient_id: str, payload: PatientChatRequest):
         "Bạn là trợ lý điều hướng bệnh viện cho bệnh nhân, trả lời tiếng Việt tự nhiên như ChatGPT.\n"
         "Mục tiêu: chỉ đường theo khoa/phòng/tầng, ngắn gọn, dễ hiểu, có bước đi cụ thể.\n"
         "QUAN TRỌNG:\n"
-        "- Luôn ưu tiên dùng danh sách khoa có sẵn trong context, kể cả khi người dùng dùng alias tiếng Việt.\n"
-        "- Nếu người dùng hỏi đi từ khoa A sang khoa B, trả lời thành các bước ngắn kiểu: đi thẳng -> rẽ trái/phải -> tới tầng.\n"
+        "- Luôn ưu tiên dùng danh sách khoa có sẵn trong context. Lưu ý rằng mỗi Xét nghiệm là một phòng ban thuộc Khu/Block và Tầng cụ thể.\n"
+        "- Khi trả lời, hãy nói bệnh nhân đến Khu/Block nào, lên Tầng mấy, vào khoa nào, và đến cụ thể phòng xét nghiệm nào.\n"
+        "- Nếu người dùng hỏi đi từ khoa A sang khoa B, trả lời thành các bước ngắn kiểu: đi sang Khu -> lên Tầng -> tới phòng.\n"
         "- Nếu khoa không có trong danh mục, mới hỏi lại 1 câu ngắn."
     )
     user_context = (
