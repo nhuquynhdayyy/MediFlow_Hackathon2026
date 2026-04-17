@@ -81,6 +81,31 @@ MOCK_HISTORY = {
 }
 
 
+def _normalize_saved_emr(emr_data: dict) -> dict:
+    history = emr_data.get("medical_history") or emr_data.get("history") or ""
+    diagnosis = emr_data.get("preliminary_diagnosis") or emr_data.get("diagnosis") or ""
+    current_medications = emr_data.get("current_medications") or []
+    if isinstance(current_medications, str):
+        current_medications = [item.strip() for item in current_medications.split(",") if item.strip()]
+
+    return {
+        "chief_complaint": emr_data.get("chief_complaint", ""),
+        "symptoms": emr_data.get("symptoms", ""),
+        "history": history,
+        "medical_history": history,
+        "allergies": emr_data.get("allergies", ""),
+        "current_medications": current_medications,
+        "diagnosis": diagnosis,
+        "preliminary_diagnosis": diagnosis,
+        "treatment_plan": emr_data.get("treatment_plan", ""),
+        "follow_up_date": emr_data.get("follow_up_date", ""),
+        "prescriptions": emr_data.get("prescriptions", []) or [],
+        "lab_orders": emr_data.get("lab_orders", []) or [],
+        "notes": emr_data.get("notes", ""),
+        "soap": emr_data.get("soap"),
+    }
+
+
 class EMRService:
     def __init__(self):
         self._patients = {p["id"]: p for p in MOCK_PATIENTS}
@@ -173,10 +198,11 @@ class EMRService:
         return patient
 
     def save_emr(self, patient_id: str, emr_data: dict):
+        normalized = _normalize_saved_emr(emr_data)
         if patient_id not in self._emr_updates:
             self._emr_updates[patient_id] = {}
         self._emr_updates[patient_id].update({
-            **emr_data,
+            **normalized,
             "updated_at": datetime.now().isoformat(),
         })
         if self._firebase_available:
@@ -184,10 +210,23 @@ class EMRService:
                 payload = {
                     "patient_id": patient_id,
                     "doctor_id": emr_data.get("doctor_id", "DR001"),
-                    "diagnosis": emr_data.get("preliminary_diagnosis") or emr_data.get("diagnosis", ""),
-                    "treatment": emr_data.get("treatment_plan", ""),
+                    "chief_complaint": normalized["chief_complaint"],
+                    "symptoms": normalized["symptoms"],
+                    "history": normalized["history"],
+                    "medical_history": normalized["medical_history"],
+                    "allergies": normalized["allergies"],
+                    "current_medications": normalized["current_medications"],
+                    "diagnosis": normalized["diagnosis"],
+                    "preliminary_diagnosis": normalized["preliminary_diagnosis"],
+                    "treatment": normalized["treatment_plan"],
+                    "treatment_plan": normalized["treatment_plan"],
+                    "follow_up_date": normalized["follow_up_date"],
+                    "prescriptions": normalized["prescriptions"],
+                    "lab_orders": normalized["lab_orders"],
+                    "notes": normalized["notes"],
+                    "soap": normalized["soap"],
                     "record_date": datetime.now().isoformat(),
-                    "emr_data": emr_data,
+                    "emr_data": normalized,
                 }
                 self._firebase_db.collection("medical_records").add(payload)
             except Exception:

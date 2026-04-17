@@ -73,8 +73,12 @@ class SaveEMRRequest(BaseModel):
     chief_complaint: str = ""
     symptoms:        str = ""
     history:         str = ""
+    medical_history: str = ""
     diagnosis:       str = ""
+    preliminary_diagnosis: str = ""
     treatment_plan:  str = ""
+    allergies:       str = ""
+    current_medications: Optional[List[str]] = []
     follow_up_date:  str = ""
     prescriptions:   Optional[List[dict]] = []
     lab_orders:      Optional[List[str]]  = []

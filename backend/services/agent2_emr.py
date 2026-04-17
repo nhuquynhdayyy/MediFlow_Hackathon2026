@@ -209,6 +209,32 @@ def _age_from_profile(profile: dict) -> str | int:
     return today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
 
 
+def _normalize_saved_emr(payload: dict) -> dict:
+    history = payload.get("medical_history") or payload.get("history") or ""
+    diagnosis = payload.get("preliminary_diagnosis") or payload.get("diagnosis") or ""
+    current_medications = payload.get("current_medications") or []
+    if isinstance(current_medications, str):
+        current_medications = _to_list(current_medications)
+
+    return {
+        "patient_name": payload.get("patient_name", ""),
+        "chief_complaint": payload.get("chief_complaint", ""),
+        "symptoms": payload.get("symptoms", ""),
+        "history": history,
+        "medical_history": history,
+        "allergies": payload.get("allergies", ""),
+        "current_medications": current_medications,
+        "diagnosis": diagnosis,
+        "preliminary_diagnosis": diagnosis,
+        "treatment_plan": payload.get("treatment_plan", ""),
+        "follow_up_date": payload.get("follow_up_date", ""),
+        "prescriptions": payload.get("prescriptions", []) or [],
+        "lab_orders": payload.get("lab_orders", []) or [],
+        "notes": payload.get("notes", ""),
+        "soap": payload.get("soap"),
+    }
+
+
 class Agent2EMRService:
     def __init__(self):
         self._db = firebase_db
@@ -312,21 +338,13 @@ class Agent2EMRService:
 
     def save(self, req) -> str:
         emr_id = str(uuid4())[:8].upper()
+        normalized = _normalize_saved_emr(req.model_dump())
         record = {
             "emr_id": emr_id,
             "patient_id": req.patient_id,
             "patient_name": req.patient_name,
-            "chief_complaint": req.chief_complaint,
-            "symptoms": req.symptoms,
-            "history": req.history,
-            "diagnosis": req.diagnosis,
-            "treatment_plan": req.treatment_plan,
-            "follow_up_date": req.follow_up_date,
-            "prescriptions": req.prescriptions,
-            "lab_orders": req.lab_orders,
-            "notes": req.notes,
+            **normalized,
             "doctor_id": req.doctor_id,
-            "soap": req.soap,
             "created_at": datetime.now().isoformat(),
             "status": "completed",
         }
@@ -339,38 +357,38 @@ class Agent2EMRService:
                         "patient_id": req.patient_id,
                         "patient_name": req.patient_name,
                         "doctor_id": req.doctor_id,
-                        "diagnosis": req.diagnosis,
-                        "treatment": req.treatment_plan,
-                        "chief_complaint": req.chief_complaint,
+                        "chief_complaint": normalized["chief_complaint"],
+                        "symptoms": normalized["symptoms"],
+                        "history": normalized["history"],
+                        "medical_history": normalized["medical_history"],
+                        "allergies": normalized["allergies"],
+                        "current_medications": normalized["current_medications"],
+                        "diagnosis": normalized["diagnosis"],
+                        "preliminary_diagnosis": normalized["preliminary_diagnosis"],
+                        "treatment": normalized["treatment_plan"],
+                        "treatment_plan": normalized["treatment_plan"],
+                        "follow_up_date": normalized["follow_up_date"],
+                        "prescriptions": normalized["prescriptions"],
+                        "lab_orders": normalized["lab_orders"],
+                        "notes": normalized["notes"],
+                        "soap": normalized["soap"],
                         "record_date": datetime.now().isoformat(),
-                        "emr_data": {
-                            "patient_name": req.patient_name,
-                            "chief_complaint": req.chief_complaint,
-                            "symptoms": req.symptoms,
-                            "history": req.history,
-                            "diagnosis": req.diagnosis,
-                            "treatment_plan": req.treatment_plan,
-                            "follow_up_date": req.follow_up_date,
-                            "prescriptions": req.prescriptions,
-                            "lab_orders": req.lab_orders,
-                            "notes": req.notes,
-                            "soap": req.soap,
-                        },
+                        "emr_data": normalized,
                     }
                 )
             except Exception:
                 pass
 
         if req.patient_id in self._mock_patients:
-            self._mock_patients[req.patient_id]["diagnosis"] = req.diagnosis
-            self._mock_patients[req.patient_id]["treatment_plan"] = req.treatment_plan
+            self._mock_patients[req.patient_id]["diagnosis"] = normalized["diagnosis"]
+            self._mock_patients[req.patient_id]["treatment_plan"] = normalized["treatment_plan"]
 
         history_item = {
             "visit_date": datetime.now().date().isoformat(),
-            "chief_complaint": req.chief_complaint,
-            "diagnosis": req.diagnosis,
-            "treatment": req.treatment_plan,
-            "follow_up_date": req.follow_up_date,
+            "chief_complaint": normalized["chief_complaint"],
+            "diagnosis": normalized["diagnosis"],
+            "treatment": normalized["treatment_plan"],
+            "follow_up_date": normalized["follow_up_date"],
             "doctor": req.doctor_id,
         }
         self._mock_history.setdefault(req.patient_id, []).insert(0, history_item)
