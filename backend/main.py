@@ -19,6 +19,16 @@ from services.fpt_ai import FPTAIService
 from services.emr import EMRService
 from services.triage_agent import TriageAgentService
 
+# Firebase — optional, fallback gracefully if not installed
+try:
+    from database_firebase import (
+        create_appointment, get_patient_info,
+        save_patient_profile, get_appointments_by_uid, save_chat_session
+    )
+    FIREBASE_ENABLED = True
+except Exception as _fb_err:
+    FIREBASE_ENABLED = False
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -70,6 +80,33 @@ class PaymentQRRequest(BaseModel):
     patient_id: str
     amount: float
     description: Optional[str] = ""
+
+class CreateAppointmentRequest(BaseModel):
+    patient_uid: str
+    patient_name: str = ""
+    patient_phone: str
+    department: str
+    scheduled_date: str
+    scheduled_time: str
+    triage_level: Optional[int] = None
+    symptoms: Optional[str] = ""
+    session_id: Optional[str] = None
+
+class SavePatientRequest(BaseModel):
+    uid: str
+    name: str
+    phone: str
+    dob: Optional[str] = ""
+    gender: Optional[str] = ""
+    address: Optional[str] = ""
+    insurance: Optional[str] = ""
+
+class SaveChatSessionRequest(BaseModel):
+    session_id: str
+    patient_uid: str
+    messages: list
+    triage_level: Optional[int] = None
+    department: Optional[str] = None
 
 # ── Health Check ──────────────────────────────────────────────────────────
 @app.get("/health")
@@ -287,6 +324,63 @@ def save_emr(req: SaveEMRRequest):
 @app.get("/api/emr/history/{patient_id}")
 def get_history(patient_id: str):
     return {"status": "success", "data": emr_service.get_history(patient_id)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# APPOINTMENTS & PATIENT PROFILE (Firestore)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/appointments/create")
+def api_create_appointment(req: CreateAppointmentRequest):
+    """Đặt lịch khám từ kết quả chat triage."""
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+    try:
+        appt_id = create_appointment(
+            patient_id=req.patient_uid,
+            dept_name=req.department,
+            time=f"{req.scheduled_date} {req.scheduled_time}",
+            phone=req.patient_phone,
+            patient_name=req.patient_name,
+            triage_level=req.triage_level,
+            symptoms=req.symptoms,
+            session_id=req.session_id,
+        )
+        logger.info(f"[Appointment] Created: {appt_id} for {req.department}")
+        return {"status": "success", "appointment_id": appt_id,
+                "message": f"Đã đặt lịch tại {req.department}"}
+    except Exception as e:
+        logger.error(f"[Appointment] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/appointments/{uid}")
+def api_get_appointments(uid: str):
+    """Lấy danh sách lịch hẹn của bệnh nhân."""
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+    return {"status": "success", "data": get_appointments_by_uid(uid)}
+
+
+@app.post("/api/patients/save")
+def api_save_patient(req: SavePatientRequest):
+    """Lưu hồ sơ bệnh nhân."""
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+    save_patient_profile(req.uid, req.name, req.phone,
+                         dob=req.dob, gender=req.gender,
+                         address=req.address, insurance=req.insurance)
+    return {"status": "success", "message": "Đã lưu hồ sơ bệnh nhân"}
+
+
+@app.post("/api/chat-sessions/save")
+def api_save_session(req: SaveChatSessionRequest):
+    """Lưu phiên chat triage."""
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase chưa được cấu hình")
+    save_chat_session(req.session_id, req.patient_uid,
+                      req.messages, req.triage_level, req.department)
+    return {"status": "success"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -105,6 +105,19 @@ export const docChatStream = async (prompt, apiKey, model, onChunk, onDone, onEr
 export const generateQR = (patientId, amount, description) =>
   post('/payment/generate-qr', { patient_id: patientId, amount, description })
 
+// ── Appointments & Patients (Firestore) ───────────────────────────────────
+export const createAppointment = (data) =>
+  post('/appointments/create', data)
+
+export const getAppointments = (uid) =>
+  get(`/appointments/${uid}`)
+
+export const savePatientProfile = (data) =>
+  post('/patients/save', data)
+
+export const saveChatSession = (data) =>
+  post('/chat-sessions/save', data)
+
 // ── Health ────────────────────────────────────────────────────────────────
 export const healthCheck = () => axios.get('/health').then(r => r.data)
 

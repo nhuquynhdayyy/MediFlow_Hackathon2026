@@ -3,7 +3,7 @@ import {
   Send, Mic, MicOff, Trash2, AlertTriangle, Calendar, Home, Bot, User, Radio
 } from 'lucide-react'
 import { useStore } from '../store'
-import { triageChatStream } from '../services/api'
+import { triageChatStream, createAppointment } from '../services/api'
 import { useVoice } from '../hooks/useVoice'
 import { useConversationalVoice, VS } from '../hooks/useConversationalVoice'
 import VoiceConversationOverlay from '../components/VoiceConversationOverlay'
@@ -31,6 +31,7 @@ export default function TriagePage() {
 
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
+  const [confirmedBookings, setConfirmedBookings] = useState(new Set())
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
 
@@ -121,6 +122,7 @@ export default function TriagePage() {
           accumulated
             .replace(/\[TRIAGE:\d\]/g, '')
             .replace(/\[DEPT:[^\]]+\]/g, '')
+            .replace(/\[BOOK:[^\]]+\]/g, '')
         )
       },
       // onDone
@@ -137,11 +139,29 @@ export default function TriagePage() {
         else if (accumulated.includes('[TRIAGE:1]')) { level = 1; action = 'home' }
         const deptMatch = accumulated.match(/\[DEPT:([^\]]+)\]/)
         if (deptMatch) dept = deptMatch[1]
+
+        // Parse booking data từ AI response
+        const bookMatch = accumulated.match(/\[BOOK:([^\]]+)\]/)
+        let bookingData = null
+        if (bookMatch) {
+          const parts = bookMatch[1].split('|')
+          if (parts.length >= 4) {
+            bookingData = {
+              department: parts[0].trim(),
+              scheduled_date: parts[1].trim(),
+              scheduled_time: parts[2].trim(),
+              patient_phone: parts[3].trim(),
+              triage_level: level,
+            }
+          }
+        }
+
         const clean = accumulated
           .replace(/\[TRIAGE:\d\]/g, '')
           .replace(/\[DEPT:[^\]]+\]/g, '')
+          .replace(/\[BOOK:[^\]]+\]/g, '')
           .trim()
-        addMessageAndSync({ role: 'assistant', content: clean, triageLevel: level, department: dept, action })
+        addMessageAndSync({ role: 'assistant', content: clean, triageLevel: level, department: dept, action, bookingData })
       },
       // onError
       (err) => {
@@ -156,6 +176,33 @@ export default function TriagePage() {
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
+
+  // ── Xác nhận đặt lịch từ nút trong chat ──
+  const handleConfirmBooking = useCallback(async (bookingData, msgIndex) => {
+    try {
+      const res = await createAppointment({
+        patient_uid: user?.uid || 'anonymous',
+        patient_name: user?.email || 'Bệnh nhân',
+        patient_phone: bookingData.patient_phone,
+        department: bookingData.department,
+        scheduled_date: bookingData.scheduled_date,
+        scheduled_time: bookingData.scheduled_time,
+        triage_level: bookingData.triage_level,
+        session_id: triageSession,
+      })
+      setConfirmedBookings(prev => new Set([...prev, msgIndex]))
+      addMessageAndSync({
+        role: 'assistant',
+        content: `✅ Đặt lịch thành công!\n📋 Mã lịch hẹn: ${res.data?.appointment_id || 'N/A'}\n🏥 ${bookingData.department}\n📅 ${bookingData.scheduled_time} ngày ${bookingData.scheduled_date}\n📞 SĐT: ${bookingData.patient_phone}`,
+      })
+    } catch (e) {
+      addMessageAndSync({
+        role: 'assistant',
+        content: `⚠️ Lỗi đặt lịch: ${e.message || 'Không thể kết nối server'}`,
+        isError: true,
+      })
+    }
+  }, [user, triageSession, addMessageAndSync])
 
   const handleVoiceButton = () => {
     if (!apiKey) { alert('Vui lòng nhập FPT API Key trong phần Cài đặt.'); return }
@@ -276,7 +323,11 @@ export default function TriagePage() {
             )}
 
             {triageMessages.map((msg, i) => (
-              <MessageBubble key={i} msg={msg} />
+              <MessageBubble key={i} msg={msg} onBook={
+                msg.bookingData && !confirmedBookings.has(i)
+                  ? () => handleConfirmBooking(msg.bookingData, i)
+                  : null
+              } />
             ))}
 
             {/* Streaming */}
@@ -358,7 +409,7 @@ export default function TriagePage() {
   )
 }
 
-function MessageBubble({ msg }) {
+function MessageBubble({ msg, onBook }) {
   const isUser = msg.role === 'user'
   const levelConf = msg.triageLevel ? LEVEL_CONFIG[msg.triageLevel] : null
 
@@ -394,6 +445,15 @@ function MessageBubble({ msg }) {
           'bg-white border-slate-200'
         }`}>
           <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+          {onBook && msg.bookingData && (
+            <button
+              onClick={onBook}
+              className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-500 to-sky-500 text-white rounded-xl text-sm font-semibold hover:from-teal-600 hover:to-sky-600 transition-all shadow-md shadow-teal-500/20"
+            >
+              <Calendar size={14} />
+              Xác nhận đặt lịch — {msg.bookingData.department} ({msg.bookingData.scheduled_time} {msg.bookingData.scheduled_date})
+            </button>
+          )}
         </div>
       </div>
     </div>

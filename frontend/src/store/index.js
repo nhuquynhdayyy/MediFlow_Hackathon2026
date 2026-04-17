@@ -51,6 +51,12 @@ export const useStore = create((set, get) => ({
   soapResult: '',
   setAiResult: (key, val) => set({ [key]: val }),
 
+  // Appointments
+  appointments: [],
+  setAppointments: (list) => set({ appointments: list }),
+  addAppointment: (appt) =>
+    set((s) => ({ appointments: [appt, ...s.appointments] })),
+
   // QR modal
   qrData: null,
   showQR: false,

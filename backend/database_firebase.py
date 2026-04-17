@@ -12,7 +12,7 @@ db = firestore.client()
 # NHÓM AGENT 1: TRIAGE & ĐẶT LỊCH
 # ==========================================
 
-def create_appointment(patient_id, dept_name, time, phone):
+def create_appointment(patient_id, dept_name, time, phone, **kwargs):
     """Tạo lịch khám mới (Tương ứng bảng APPOINTMENTS trong ERD)"""
     doc_ref = db.collection("appointments").document()
     doc_data = {
@@ -20,9 +20,10 @@ def create_appointment(patient_id, dept_name, time, phone):
         "department_name": dept_name,
         "scheduled_at": time,
         "patient_phone": phone,
-        "status": "waiting", # Trạng thái hàng đợi
-        "queue_number": 0,    # Sẽ được cập nhật sau
-        "created_at": firestore.SERVER_TIMESTAMP
+        "status": "waiting",
+        "queue_number": 0,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        **kwargs,  # triage_level, symptoms, session_id, patient_name...
     }
     doc_ref.set(doc_data)
     return doc_ref.id
@@ -37,8 +38,8 @@ def save_medical_record(patient_id, doctor_id, diagnosis, treatment):
     doc_data = {
         "patient_id": patient_id,
         "doctor_id": doctor_id,
-        "diagnosis": diagnosis, # Chẩn đoán từ Agent 2
-        "treatment": treatment, # Phác đồ từ Agent 2
+        "diagnosis": diagnosis,
+        "treatment": treatment,
         "record_date": firestore.SERVER_TIMESTAMP
     }
     doc_ref.set(doc_data)
@@ -54,3 +55,45 @@ def get_patient_info(patient_id):
     if doc.exists:
         return doc.to_dict()
     return None
+
+# ==========================================
+# MỚI: PATIENT PROFILE & APPOINTMENTS QUERY
+# ==========================================
+
+def save_patient_profile(uid, name, phone, **kwargs):
+    """Lưu/cập nhật hồ sơ bệnh nhân theo Firebase UID"""
+    doc_ref = db.collection("patients").document(uid)
+    doc_data = {
+        "name": name,
+        "phone": phone,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        **kwargs,
+    }
+    doc_ref.set(doc_data, merge=True)
+    return uid
+
+def get_appointments_by_uid(uid):
+    """Lấy danh sách lịch hẹn của bệnh nhân theo UID"""
+    docs = db.collection("appointments") \
+        .where("patient_id", "==", uid) \
+        .order_by("created_at", direction=firestore.Query.DESCENDING) \
+        .limit(20).stream()
+    results = []
+    for d in docs:
+        data = d.to_dict()
+        # Convert SERVER_TIMESTAMP to string for JSON serialization
+        if data.get("created_at"):
+            data["created_at"] = str(data["created_at"])
+        results.append({"id": d.id, **data})
+    return results
+
+def save_chat_session(session_id, uid, messages, triage_level=None, department=None):
+    """Lưu phiên chat triage vào Firestore"""
+    doc_ref = db.collection("chat_sessions").document(session_id)
+    doc_ref.set({
+        "patient_uid": uid,
+        "messages": messages,
+        "triage_level": triage_level,
+        "department": department,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)

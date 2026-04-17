@@ -39,7 +39,14 @@ Ngôn ngữ giao tiếp: Tiếng Việt, lịch sự, thân thiện, ngắn gọ
 - TUYỆT ĐỐI không kê đơn thuốc hoặc chẩn đoán tên bệnh cụ thể.
 - Ghi rõ mức độ: [TRIAGE:3], [TRIAGE:2], hoặc [TRIAGE:1] ở đầu response.
 - Ghi rõ khoa gợi ý: [DEPT:Tên khoa] nếu có.
-- KHÔNG lặp lại lời giới thiệu mỗi tin nhắn."""
+- KHÔNG lặp lại lời giới thiệu mỗi tin nhắn.
+
+=== ĐẶT LỊCH KHÁM ===
+Khi bệnh nhân ĐỒNG Ý đặt lịch và ĐÃ CUNG CẤP ĐỦ thông tin (khoa, thời gian, số điện thoại), hãy:
+1. Ghi tag: [BOOK:Tên khoa|Ngày (YYYY-MM-DD)|Buổi (Sáng/Chiều)|SĐT]
+2. Ví dụ: [BOOK:Khoa Tiêu hóa|2026-04-18|Sáng|0901234567]
+3. Chỉ ghi tag [BOOK:...] khi ĐỦ 4 thông tin. Nếu thiếu, hỏi thêm.
+4. Nếu bệnh nhân chưa nói ngày cụ thể (ví dụ "ngày mai"), tự suy ra ngày chính xác."""
 
 
 def _normalize_history(history: list) -> list:
@@ -104,13 +111,28 @@ class TriageAgentService:
         dept_match = re.search(r"\[DEPT:([^\]]+)\]", raw)
         if dept_match:
             suggested_department = dept_match.group(1).strip()
+        # Parse booking data
+        booking_data = None
+        book_match = re.search(r"\[BOOK:([^\]]+)\]", raw)
+        if book_match:
+            parts = book_match.group(1).split('|')
+            if len(parts) >= 4:
+                booking_data = {
+                    "department": parts[0].strip(),
+                    "scheduled_date": parts[1].strip(),
+                    "scheduled_time": parts[2].strip(),
+                    "patient_phone": parts[3].strip(),
+                }
+                action = "confirm_booking"
         clean = re.sub(r"\[TRIAGE:\d\]", "", raw)
-        clean = re.sub(r"\[DEPT:[^\]]+\]", "", clean).strip()
+        clean = re.sub(r"\[DEPT:[^\]]+\]", "", clean)
+        clean = re.sub(r"\[BOOK:[^\]]+\]", "", clean).strip()
         return {
             "response": clean,
             "triage_level": triage_level,
             "suggested_department": suggested_department,
             "action": action,
+            "booking_data": booking_data,
         }
 
     async def chat(self, message: str, history: list, api_key: str,
