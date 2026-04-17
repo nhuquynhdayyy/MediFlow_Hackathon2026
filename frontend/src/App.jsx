@@ -29,29 +29,29 @@ export default function App() {
             to="/"
             end
             className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-sky-50 text-sky-600'
-                  : 'text-slate-600 hover:bg-slate-100'
+              `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
+                ? 'bg-sky-50 text-sky-600'
+                : 'text-slate-600 hover:bg-slate-100'
               }`
             }
           >
             <Activity size={15} />
             Agent 1 · Triage
           </NavLink>
-          <NavLink
-            to="/docassist"
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                isActive
+          {user?.role === 'doctor' && (
+            <NavLink
+              to="/docassist"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
                   ? 'bg-teal-50 text-teal-600'
                   : 'text-slate-600 hover:bg-slate-100'
-              }`
-            }
-          >
-            <Stethoscope size={15} />
-            Agent 2 · DocAssist
-          </NavLink>
+                }`
+              }
+            >
+              <Stethoscope size={15} />
+              Agent 2 · DocAssist
+            </NavLink>
+          )}
         </div>
 
         {/* Settings pushed right */}
@@ -63,8 +63,8 @@ export default function App() {
       {/* ── Page content ── */}
       <main className="flex-1 overflow-hidden">
         <Routes>
-          <Route path="/"           element={<TriagePage />} />
-          <Route path="/docassist"  element={<DocAssistPage />} />
+          <Route path="/" element={<TriagePage />} />
+          <Route path="/docassist" element={<DocAssistPage />} />
         </Routes>
       </main>
 
