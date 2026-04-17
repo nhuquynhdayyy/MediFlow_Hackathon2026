@@ -75,6 +75,7 @@ class SaveEMRRequest(BaseModel):
     history:         str = ""
     diagnosis:       str = ""
     treatment_plan:  str = ""
+    follow_up_date:  str = ""
     prescriptions:   Optional[List[dict]] = []
     lab_orders:      Optional[List[str]]  = []
     notes:           str  = ""

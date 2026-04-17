@@ -92,6 +92,7 @@ MOCK_HISTORY = {
             "chief_complaint": "Kiểm tra huyết áp định kỳ",
             "diagnosis": "THA độ II ổn định",
             "treatment": "Tiếp tục Amlodipine 5mg",
+            "follow_up_date": "2026-04-15",
             "doctor": "BS. Nguyễn Minh Tuấn",
         }
     ],
@@ -101,6 +102,7 @@ MOCK_HISTORY = {
             "chief_complaint": "Tái khám ĐTĐ",
             "diagnosis": "ĐTĐ type 2, HbA1c 7.8%",
             "treatment": "Tăng liều Metformin, chế độ ăn",
+            "follow_up_date": "2026-04-13",
             "doctor": "BS. Lê Thu Hà",
         }
     ],
@@ -138,6 +140,7 @@ class EMRService:
             "history": req.history,
             "diagnosis": req.diagnosis,
             "treatment_plan": req.treatment_plan,
+            "follow_up_date": req.follow_up_date,
             "prescriptions": req.prescriptions,
             "lab_orders": req.lab_orders,
             "notes": req.notes,
@@ -153,4 +156,13 @@ class EMRService:
                 p["diagnosis"] = req.diagnosis
                 p["treatment_plan"] = req.treatment_plan
                 break
+        history_item = {
+            "visit_date": datetime.now().date().isoformat(),
+            "chief_complaint": req.chief_complaint,
+            "diagnosis": req.diagnosis,
+            "treatment": req.treatment_plan,
+            "follow_up_date": req.follow_up_date,
+            "doctor": req.doctor_id,
+        }
+        MOCK_HISTORY.setdefault(req.patient_id, []).insert(0, history_item)
         return emr_id

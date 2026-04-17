@@ -8,6 +8,7 @@ export const useStore = create((set, get) => ({
     history:         '',
     diagnosis:       '',
     treatment_plan:  '',
+    follow_up_date:  '',
     notes:           '',
     prescriptions:   [],
     lab_orders:      [],
@@ -18,7 +19,7 @@ export const useStore = create((set, get) => ({
   setEmr:      (data)       => set(s => ({ emr: { ...s.emr, ...data }     })),
   resetEmr:    ()           => set({ emr: {
     chief_complaint: '', symptoms: '', history: '',
-    diagnosis: '', treatment_plan: '', notes: '',
+    diagnosis: '', treatment_plan: '', follow_up_date: '', notes: '',
     prescriptions: [], lab_orders: [], _labData: [], soap: null,
   }}),
 

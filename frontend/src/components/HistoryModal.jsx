@@ -22,6 +22,9 @@ export default function HistoryModal({ history, onClose }) {
                 <div className="text-gray-600"><span className="font-medium">Lý do:</span> {h.chief_complaint}</div>
                 <div className="text-gray-600"><span className="font-medium">Chẩn đoán:</span> {h.diagnosis}</div>
                 <div className="text-gray-600"><span className="font-medium">Điều trị:</span> {h.treatment}</div>
+                {h.follow_up_date && (
+                  <div className="text-gray-600"><span className="font-medium">Hẹn tái khám:</span> {h.follow_up_date}</div>
+                )}
               </div>
             ))
           )}

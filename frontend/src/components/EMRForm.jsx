@@ -95,6 +95,7 @@ export default function EMRForm() {
         chief_complaint: emr.chief_complaint, symptoms: emr.symptoms,
         history: emr.history, diagnosis: emr.diagnosis,
         treatment_plan: emr.treatment_plan, prescriptions: emr.prescriptions || [],
+        follow_up_date: emr.follow_up_date || '',
         lab_orders: emr.lab_orders || [], notes: emr.notes || '',
         soap: emr.soap || null, doctor_id: 'DR001',
       })
@@ -157,6 +158,7 @@ export default function EMRForm() {
             <EMRField label="Triệu chứng hiện tại (sinh hiệu, mô tả chi tiết)" value={emr.symptoms} onChange={v => setEmrField('symptoms', v)} rows={3} />
             <EMRField label="Chẩn đoán sơ bộ" value={emr.diagnosis} onChange={v => setEmrField('diagnosis', v)} rows={2} placeholder="Nhấn 'AI gợi ý chẩn đoán' để điền tự động..." />
             <EMRField label="Kế hoạch điều trị" value={emr.treatment_plan} onChange={v => setEmrField('treatment_plan', v)} rows={3} placeholder="Nhấn 'AI đề xuất điều trị' để điền tự động..." />
+            <DateField label="Hẹn ngày tái khám" value={emr.follow_up_date} onChange={v => setEmrField('follow_up_date', v)} />
             <EMRField label="Ghi chú bác sĩ"   value={emr.notes}          onChange={v => setEmrField('notes', v)} rows={2} />
             {emr.soap && (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
@@ -213,5 +215,19 @@ function AIBtn({ label, loading, onClick }) {
       className="flex items-center gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-100 rounded-lg px-3 py-1.5 transition disabled:opacity-50">
       {loading ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}{label}
     </button>
+  )
+}
+
+function DateField({ label, value, onChange }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-3">
+      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5">{label}</label>
+      <input
+        type="date"
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        className="w-full text-sm text-gray-800 bg-transparent outline-none"
+      />
+    </div>
   )
 }
