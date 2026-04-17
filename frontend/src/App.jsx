@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Activity, Stethoscope } from 'lucide-react'
 import TriagePage from './pages/TriagePage'
 import DocAssistPage from './pages/DocAssistPage'
@@ -25,19 +25,21 @@ export default function App() {
 
         {/* Tabs */}
         <div className="flex gap-1">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
-                ? 'bg-sky-50 text-sky-600'
-                : 'text-slate-600 hover:bg-slate-100'
-              }`
-            }
-          >
-            <Activity size={15} />
-            Agent 1 · Triage
-          </NavLink>
+          {user?.role !== 'doctor' && (
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
+                  ? 'bg-sky-50 text-sky-600'
+                  : 'text-slate-600 hover:bg-slate-100'
+                }`
+              }
+            >
+              <Activity size={15} />
+              Agent 1 · Triage
+            </NavLink>
+          )}
           {user?.role === 'doctor' && (
             <NavLink
               to="/docassist"
@@ -63,7 +65,10 @@ export default function App() {
       {/* ── Page content ── */}
       <main className="flex-1 overflow-hidden">
         <Routes>
-          <Route path="/" element={<TriagePage />} />
+          <Route 
+            path="/" 
+            element={user?.role === 'doctor' ? <Navigate to="/docassist" /> : <TriagePage />} 
+          />
           <Route path="/docassist" element={<DocAssistPage />} />
         </Routes>
       </main>
