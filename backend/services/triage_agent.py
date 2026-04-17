@@ -5,6 +5,7 @@ import httpx
 import json
 import logging
 import re
+from datetime import datetime
 from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,11 @@ class TriageAgentService:
 
     def _build_messages(self, message: str, history: list) -> list:
         """Build message list với system prompt + history đã normalize."""
-        messages = [{"role": "system", "content": TRIAGE_SYSTEM_PROMPT}]
+        # Inject ngày hiện tại để AI tính đúng "ngày mai", "tuần sau"...
+        weekdays = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+        now = datetime.now()
+        date_info = f"\n\nNGÀY HIỆN TẠI: {weekdays[now.weekday()]}, {now.strftime('%Y-%m-%d')} (giờ: {now.strftime('%H:%M')}). Dùng thông tin này khi bệnh nhân nói 'ngày mai', 'tuần sau', v.v."
+        messages = [{"role": "system", "content": TRIAGE_SYSTEM_PROMPT + date_info}]
         # FIX: normalize history trước khi dùng
         normalized = _normalize_history(history)
         # Chỉ lấy 10 lượt gần nhất
