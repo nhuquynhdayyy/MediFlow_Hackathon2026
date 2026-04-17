@@ -173,18 +173,11 @@ export function useConversationalVoice({ apiKey, model, historyRef, onNewMessage
         const pct = Math.min(100, (avg / 255) * 100 * 3)
         setAmplitude(pct)
 
-        // FIX: Chỉ cho phép interrupt khi đang SPEAKING (không phải THINKING)
-        // + phải vượt qua grace period để tránh TTS echo tự-interrupt
-        if (
-          stateRef.current === VS.SPEAKING
-          && avg > INTERRUPT_VOLUME
-          && (Date.now() - speakingStartRef.current) > INTERRUPT_GRACE_MS
-        ) {
-          stopSpeaking()
-          streamAbortRef.current?.abort()
-          setState(VS.LISTENING)
-          setAiStreamText('')
-        }
+        // NOTE: Auto-interrupt bằng VAD đã bị tắt.
+        // Lý do: mic bắt tiếng loa TTS (echo) → avg vượt ngưỡng → tự interrupt
+        // → TTS bị cắt giữa chừng. Không thể phân biệt giọng user vs echo loa.
+        // User dừng thủ công bằng nút "Kết thúc cuộc trò chuyện".
+        // Sau khi TTS đọc xong, hệ thống tự động quay lại LISTENING.
       }, VAD_INTERVAL_MS)
     } catch (_) {
       console.warn('VAD: không có quyền mic')
