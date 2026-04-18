@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { buildInitialDoctorEmr } from '../../doctor/emr'
 import { useStore } from '../store'
 import { Clock, Users, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
@@ -28,20 +29,11 @@ function formatDistanceVi(isoValue) {
 export default function PatientQueue() {
   const { patients, activePatient, setActivePatient, setEmr } = useStore()
   const [collapsed, setCollapsed] = useState(false)
+  const getQueueKey = (patient) => patient.queue_item_id || patient.appointment_id || patient.id
 
   const selectPatient = (patient) => {
     setActivePatient(patient)
-    setEmr({
-      chief_complaint: patient.chief_complaint || '',
-      symptoms: patient.symptoms || '',
-      history: patient.history || '',
-      diagnosis: patient.diagnosis || '',
-      treatment_plan: patient.treatment_plan || '',
-      notes: '',
-      prescriptions: [],
-      lab_orders: [],
-      soap: null,
-    })
+    setEmr(buildInitialDoctorEmr(patient))
   }
 
   if (collapsed) {
@@ -57,10 +49,10 @@ export default function PatientQueue() {
 
         <div className="mt-3 flex flex-col items-center gap-2 w-full">
           {patients.slice(0, 6).map((patient) => {
-            const isActive = activePatient?.id === patient.id
+            const isActive = getQueueKey(activePatient || {}) === getQueueKey(patient)
             return (
               <button
-                key={patient.id}
+                key={getQueueKey(patient)}
                 onClick={() => {
                   selectPatient(patient)
                   setCollapsed(false)
@@ -115,11 +107,11 @@ export default function PatientQueue() {
       <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
         {patients.map((patient) => {
           const severity = SEV_CONFIG[patient.triage_severity] || SEV_CONFIG.low
-          const isActive = activePatient?.id === patient.id
+          const isActive = getQueueKey(activePatient || {}) === getQueueKey(patient)
 
           return (
             <button
-              key={patient.id}
+              key={getQueueKey(patient)}
               onClick={() => selectPatient(patient)}
               className={`w-full text-left rounded-[18px] border px-3 py-2.5 transition-all ${
                 isActive

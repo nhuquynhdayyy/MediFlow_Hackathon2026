@@ -13,6 +13,7 @@ try:
         append_workflow_event,
         create_medical_record as create_firebase_medical_record,
         db as firebase_db,
+        get_doctor_queue_appointments,
         get_medical_records_by_patient as get_firebase_medical_records_by_patient,
         update_appointment_status,
     )
@@ -22,6 +23,7 @@ except Exception:
     append_workflow_event = None
     create_firebase_medical_record = None
     firebase_db = None
+    get_doctor_queue_appointments = None
     get_firebase_medical_records_by_patient = None
     update_appointment_status = None
     FIREBASE_AVAILABLE = False
@@ -35,104 +37,6 @@ ROOM_BY_DEPARTMENT = {
     "Khoa Mat": "K2",
     "Khoa Tai Mui Hong": "K3",
     "Khoa Da lieu": "K4",
-}
-
-MOCK_PATIENTS = [
-    {
-        "id": "P001",
-        "name": "Nguyen Van An",
-        "age": 65,
-        "gender": "Nam",
-        "room": "K1",
-        "visit_no": "2847",
-        "chief_complaint": "Dau nguc kem kho tho xuat hien tu 2 ngay nay, dau tang khi gang suc",
-        "history": "THA do II (dieu tri Amlodipine 5mg), DTD type 2",
-        "symptoms": "Dau nguc trai lan vai trai, muc do 7/10. SpO2: 96%. HA: 155/95 mmHg. Nhip tim: 92 bpm. Kho tho khi gang suc. Khong sot.",
-        "triage_severity": "high",
-        "triage_source": "Agent1",
-        "arrived_at": "2026-04-13T08:15:00",
-        "diagnosis": "",
-        "treatment_plan": "",
-        "current_medications": ["Amlodipine 5mg", "Metformin 500mg"],
-        "allergies": "",
-    },
-    {
-        "id": "P002",
-        "name": "Tran Thi Bich",
-        "age": 42,
-        "gender": "Nu",
-        "room": "K2",
-        "visit_no": "2848",
-        "chief_complaint": "Dau dau vung tran, chong mat khi dung day",
-        "history": "Khong co tien su benh nen",
-        "symptoms": "Dau dau am i 3/10, chong mat tu the. HA: 110/70. Khong sot. Khong buon non.",
-        "triage_severity": "medium",
-        "triage_source": "Agent1",
-        "arrived_at": "2026-04-13T08:40:00",
-        "diagnosis": "",
-        "treatment_plan": "",
-        "current_medications": [],
-        "allergies": "",
-    },
-    {
-        "id": "P003",
-        "name": "Le Hoang Minh",
-        "age": 28,
-        "gender": "Nam",
-        "room": "K1",
-        "visit_no": "2849",
-        "chief_complaint": "Ho lau ngay khoang 3 tuan, sot nhe buoi chieu",
-        "history": "Khong co tien su",
-        "symptoms": "Ho khan, doi khi co dom. Sot nhe 37.8C buoi chieu. Gay 2kg trong 1 thang.",
-        "triage_severity": "low",
-        "triage_source": "Agent1",
-        "arrived_at": "2026-04-13T09:05:00",
-        "diagnosis": "",
-        "treatment_plan": "",
-        "current_medications": [],
-        "allergies": "",
-    },
-    {
-        "id": "P004",
-        "name": "Pham Thi Lan",
-        "age": 55,
-        "gender": "Nu",
-        "room": "K3",
-        "visit_no": "2850",
-        "chief_complaint": "Tai kham dai thao duong dinh ky 3 thang",
-        "history": "DTD type 2 (Metformin 500mg x2), THA nhe",
-        "symptoms": "HbA1c: 7.2% (thang truoc 7.8%). HA: 130/80. Khong trieu chung moi.",
-        "triage_severity": "low",
-        "triage_source": "Agent1",
-        "arrived_at": "2026-04-13T09:20:00",
-        "diagnosis": "",
-        "treatment_plan": "",
-        "current_medications": ["Metformin 500mg", "Amlodipine 5mg"],
-        "allergies": "Penicillin",
-    },
-]
-
-MOCK_HISTORY = {
-    "P001": [
-        {
-            "visit_date": "2026-01-15",
-            "chief_complaint": "Kiem tra huyet ap dinh ky",
-            "diagnosis": "THA do II on dinh",
-            "treatment": "Tiep tuc Amlodipine 5mg",
-            "follow_up_date": "2026-04-15",
-            "doctor": "BS. Nguyen Minh Tuan",
-        }
-    ],
-    "P004": [
-        {
-            "visit_date": "2026-01-13",
-            "chief_complaint": "Tai kham DTD",
-            "diagnosis": "DTD type 2, HbA1c 7.8%",
-            "treatment": "Tang lieu Metformin, che do an",
-            "follow_up_date": "2026-04-13",
-            "doctor": "BS. Le Thu Ha",
-        }
-    ],
 }
 
 
@@ -165,6 +69,13 @@ def _to_list(value) -> list[str]:
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return []
+
+
+def _int_or_default(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _norm_key(value: str) -> str:
@@ -201,6 +112,15 @@ def _room_from_department(department: str) -> str:
         if _norm_key(key) == normalized:
             return room
     return "K1"
+
+
+def _display_gender(value: str) -> str:
+    normalized = _norm_key(value)
+    if normalized in {"nam", "male", "m"}:
+        return "Nam"
+    if normalized in {"nu", "female", "f"}:
+        return "Nu"
+    return str(value or "").strip()
 
 
 def _age_from_profile(profile: dict) -> str | int:
@@ -272,8 +192,6 @@ class Agent2EMRService:
         self._db = firebase_db
         self._firebase_available = FIREBASE_AVAILABLE
         self._saved_records: dict[str, dict] = {}
-        self._mock_patients = {patient["id"]: dict(patient) for patient in MOCK_PATIENTS}
-        self._mock_history = {key: [dict(item) for item in value] for key, value in MOCK_HISTORY.items()}
 
     def _get_profile(self, patient_id: str) -> dict:
         if not self._firebase_available:
@@ -284,29 +202,206 @@ class Agent2EMRService:
         except Exception:
             return {}
 
-    def _build_patient_from_appointment(self, appointment_id: str, appt: dict) -> dict:
-        patient_id = appt.get("patient_id") or appointment_id
-        patient_name = appt.get("patient_name") or patient_id
+    def _get_medical_records(
+        self,
+        patient_id: str,
+        cache: dict[str, list[dict]] | None = None,
+    ) -> list[dict]:
+        if not self._firebase_available or get_firebase_medical_records_by_patient is None:
+            return []
+        if cache is not None and patient_id in cache:
+            return cache[patient_id]
+        try:
+            rows = get_firebase_medical_records_by_patient(patient_id, limit=20)
+        except Exception:
+            rows = []
+        if cache is not None:
+            cache[patient_id] = rows
+        return rows
+
+    def _pick_relevant_medical_record(
+        self,
+        records: list[dict],
+        appointment_id: str = "",
+    ) -> dict:
+        if appointment_id:
+            for item in records:
+                if item.get("appointment_id") == appointment_id:
+                    return item
+        return records[0] if records else {}
+
+    def _normalize_doctor_prescriptions(self, value) -> list[dict]:
+        items = value if isinstance(value, list) else [value]
+        normalized = []
+        for item in items:
+            if isinstance(item, dict):
+                drug = str(item.get("drug") or item.get("name") or item.get("generic") or "").strip()
+                generic = str(item.get("generic") or item.get("name") or "").strip()
+                dose = str(item.get("dose") or item.get("dosage") or item.get("quantity") or "").strip()
+                route = str(item.get("route") or "").strip()
+                frequency = str(item.get("frequency") or "").strip()
+                days = item.get("days") if item.get("days") not in (None, "") else ""
+                instructions = str(
+                    item.get("instructions")
+                    or item.get("usage")
+                    or item.get("note")
+                    or item.get("notes")
+                    or ""
+                ).strip()
+                if drug or dose or instructions:
+                    normalized.append(
+                        {
+                            "drug": drug,
+                            "generic": generic,
+                            "dose": dose,
+                            "route": route,
+                            "frequency": frequency,
+                            "days": days,
+                            "instructions": instructions,
+                        }
+                    )
+                continue
+
+            text = str(item or "").strip()
+            if text:
+                normalized.append(
+                    {
+                        "drug": text,
+                        "generic": "",
+                        "dose": "",
+                        "route": "",
+                        "frequency": "",
+                        "days": "",
+                        "instructions": "",
+                    }
+                )
+        return normalized
+
+    def _merge_patient_with_medical_record(
+        self,
+        patient: dict,
+        medical_record: dict,
+        *,
+        records_count: int = 0,
+    ) -> dict:
+        if not medical_record:
+            patient["records_count"] = records_count
+            return patient
+
+        emr_data = medical_record.get("emr_data") or {}
+        treatment = medical_record.get("treatment") if isinstance(medical_record.get("treatment"), dict) else {}
+        treatment_plan = (
+            treatment.get("description")
+            or medical_record.get("treatment_plan")
+            or emr_data.get("treatment_plan")
+            or patient.get("treatment_plan", "")
+        )
+        current_medications = _to_list(
+            medical_record.get("current_medications")
+            or emr_data.get("current_medications")
+            or patient.get("current_medications")
+        )
+        prescriptions = self._normalize_doctor_prescriptions(
+            treatment.get("medications")
+            or medical_record.get("prescriptions")
+            or emr_data.get("prescriptions")
+            or []
+        )
+
+        return {
+            **patient,
+            "name": medical_record.get("full_name") or medical_record.get("patient_name") or patient.get("name", ""),
+            "age": medical_record.get("age", patient.get("age", "")) or patient.get("age", ""),
+            "gender": _display_gender(medical_record.get("gender") or patient.get("gender", "")),
+            "chief_complaint": (
+                medical_record.get("chief_complaint")
+                or emr_data.get("chief_complaint")
+                or patient.get("chief_complaint", "")
+            ),
+            "history": (
+                medical_record.get("medical_history")
+                or medical_record.get("history")
+                or emr_data.get("medical_history")
+                or emr_data.get("history")
+                or patient.get("history", "")
+            ),
+            "symptoms": medical_record.get("symptoms") or emr_data.get("symptoms") or patient.get("symptoms", ""),
+            "diagnosis": (
+                medical_record.get("diagnosis")
+                or medical_record.get("preliminary_diagnosis")
+                or emr_data.get("diagnosis")
+                or emr_data.get("preliminary_diagnosis")
+                or patient.get("diagnosis", "")
+            ),
+            "treatment_plan": treatment_plan,
+            "follow_up_date": (
+                medical_record.get("follow_up_date")
+                or emr_data.get("follow_up_date")
+                or patient.get("follow_up_date", "")
+            ),
+            "notes": medical_record.get("notes") or emr_data.get("notes") or patient.get("notes", ""),
+            "allergies": medical_record.get("allergies") or emr_data.get("allergies") or patient.get("allergies", ""),
+            "current_medications": current_medications,
+            "prescriptions": prescriptions,
+            "lab_orders": (
+                medical_record.get("lab_orders")
+                or emr_data.get("lab_orders")
+                or patient.get("lab_orders", [])
+            ),
+            "soap": medical_record.get("soap") or emr_data.get("soap") or patient.get("soap"),
+            "doctor_id": medical_record.get("doctor_id") or patient.get("doctor_id", ""),
+            "current_date": str(
+                medical_record.get("current_date") or medical_record.get("record_date") or patient.get("current_date", "")
+            )[:10],
+            "medical_record_id": medical_record.get("medical_record_id", ""),
+            "record_updated_at": medical_record.get("updated_at_iso") or medical_record.get("updated_at") or "",
+            "records_count": records_count,
+        }
+
+    def _build_patient_from_appointment(
+        self,
+        appointment_id: str,
+        appt: dict,
+        *,
+        record_cache: dict[str, list[dict]] | None = None,
+    ) -> dict:
+        patient_id = appt.get("patient_id") or appt.get("patient_uid") or appointment_id
         profile = self._get_profile(patient_id)
-        triage_level = appt.get("triage_level") or 0
+        patient_name = (
+            appt.get("patient_name")
+            or appt.get("full_name")
+            or profile.get("name")
+            or profile.get("full_name")
+            or patient_id
+        )
+        triage_level = _int_or_default(appt.get("triage_level"), 0)
         triage_map = {3: "high", 2: "medium", 1: "low"}
-        visit_no = str(appt.get("queue_number") or appointment_id[-4:]).upper()
+        queue_number = _int_or_default(appt.get("queue_number"), 0)
+        visit_no = str(queue_number if queue_number > 0 else appointment_id[-4:]).upper()
         room_department = appt.get("recommended_department") or appt.get("department_name", "")
         history = (
             profile.get("medical_history")
             or profile.get("history")
             or appt.get("medical_history")
+            or appt.get("history")
             or ""
         )
-        chief_complaint = appt.get("chief_complaint") or appt.get("symptoms") or appt.get("triage_summary") or ""
-        symptoms = appt.get("symptoms") or appt.get("triage_summary") or ""
+        chief_complaint = (
+            appt.get("chief_complaint") or appt.get("triage_summary") or appt.get("symptoms") or ""
+        )
+        symptoms = appt.get("symptoms") or appt.get("triage_summary") or chief_complaint
+        age = _age_from_profile(profile)
+        if age in ("", None):
+            age = appt.get("age", "")
         record = {
             "id": patient_id,
+            "patient_id": patient_id,
+            "queue_item_id": appointment_id,
             "appointment_id": appointment_id,
             "name": patient_name,
-            "age": _age_from_profile(profile),
-            "gender": profile.get("gender", ""),
-            "room": profile.get("room") or _room_from_department(room_department),
+            "age": age,
+            "gender": _display_gender(profile.get("gender") or appt.get("gender", "")),
+            "room": profile.get("room") or appt.get("room") or _room_from_department(room_department),
             "visit_no": visit_no,
             "chief_complaint": chief_complaint,
             "history": history,
@@ -314,48 +409,124 @@ class Agent2EMRService:
             "triage_severity": triage_map.get(triage_level, "low"),
             "triage_source": "Agent1",
             "arrived_at": _iso_or_empty(appt.get("created_at") or appt.get("scheduled_at")),
+            "current_date": "",
             "diagnosis": "",
             "treatment_plan": "",
+            "follow_up_date": "",
+            "notes": "",
             "current_medications": _to_list(profile.get("current_medications") or appt.get("current_medications")),
+            "prescriptions": [],
+            "lab_orders": [],
+            "soap": None,
             "allergies": profile.get("allergies", "") or appt.get("allergies", ""),
             "department": appt.get("department_name", ""),
             "recommended_department": appt.get("recommended_department", ""),
             "triage_level": triage_level,
             "triage_summary": appt.get("triage_summary", ""),
-            "queue_number": appt.get("queue_number", 0),
+            "queue_number": queue_number,
             "patient_phone": appt.get("patient_phone", ""),
             "session_id": appt.get("session_id", ""),
+            "status": str(appt.get("status") or "waiting").strip().lower(),
+            "booking_source": appt.get("booking_source", ""),
+            "medical_record_id": "",
+            "doctor_id": "",
+            "records_count": 0,
         }
+
+        records = self._get_medical_records(patient_id, cache=record_cache)
+        merged_record = self._merge_patient_with_medical_record(
+            record,
+            self._pick_relevant_medical_record(records, appointment_id),
+            records_count=len(records),
+        )
+
         if patient_id in self._saved_records:
             saved = self._saved_records[patient_id]
-            record["diagnosis"] = saved.get("diagnosis", record["diagnosis"])
-            record["treatment_plan"] = saved.get("treatment_plan", record["treatment_plan"])
-        return record
+            merged_record["diagnosis"] = saved.get("diagnosis", merged_record["diagnosis"])
+            merged_record["treatment_plan"] = saved.get("treatment_plan", merged_record["treatment_plan"])
+            merged_record["follow_up_date"] = saved.get("follow_up_date", merged_record["follow_up_date"])
+            merged_record["notes"] = saved.get("notes", merged_record["notes"])
+        return merged_record
 
     def _firebase_patients(self) -> list[dict]:
-        if not self._firebase_available:
+        if not self._firebase_available or get_doctor_queue_appointments is None:
             return []
         try:
-            docs = self._db.collection("appointments").limit(200).stream()
-            rows = []
-            for doc in docs:
-                appt = doc.to_dict() or {}
-                if appt.get("status", "waiting") not in {"waiting", "in_consultation"}:
-                    continue
-                rows.append(self._build_patient_from_appointment(doc.id, appt))
+            appointments = get_doctor_queue_appointments(limit=200)
+            record_cache: dict[str, list[dict]] = {}
+            rows = [
+                self._build_patient_from_appointment(item["id"], item, record_cache=record_cache)
+                for item in appointments
+            ]
             rows.sort(key=lambda item: item.get("arrived_at", ""), reverse=False)
             return rows
         except Exception:
             return []
 
     def get_patient_queue(self) -> list[dict]:
-        return self._firebase_patients() or list(self._mock_patients.values())
+        return self._firebase_patients()
 
-    def get_patient(self, patient_id: str) -> Optional[dict]:
+    def get_patient(self, patient_id: str, appointment_id: str = "") -> Optional[dict]:
+        matched_patient = None
         for patient in self.get_patient_queue():
-            if patient["id"] == patient_id:
+            if patient["id"] == patient_id and (not appointment_id or patient["appointment_id"] == appointment_id):
                 return patient
-        return self._mock_patients.get(patient_id)
+            if patient["appointment_id"] == patient_id:
+                return patient
+            if patient["id"] == patient_id and matched_patient is None:
+                matched_patient = patient
+        if matched_patient:
+            return matched_patient
+
+        profile = self._get_profile(patient_id)
+        records = self._get_medical_records(patient_id)
+        if not profile and not records:
+            return None
+
+        base_patient = {
+            "id": patient_id,
+            "patient_id": patient_id,
+            "queue_item_id": appointment_id,
+            "appointment_id": appointment_id,
+            "name": profile.get("name") or profile.get("full_name") or patient_id,
+            "age": _age_from_profile(profile),
+            "gender": _display_gender(profile.get("gender", "")),
+            "room": profile.get("room") or "",
+            "visit_no": str(appointment_id[-4:] if appointment_id else patient_id[-4:]).upper(),
+            "chief_complaint": "",
+            "history": profile.get("medical_history") or profile.get("history") or "",
+            "symptoms": "",
+            "triage_severity": "low",
+            "triage_source": "Agent1",
+            "arrived_at": "",
+            "current_date": "",
+            "diagnosis": "",
+            "treatment_plan": "",
+            "follow_up_date": "",
+            "notes": "",
+            "current_medications": _to_list(profile.get("current_medications")),
+            "prescriptions": [],
+            "lab_orders": [],
+            "soap": None,
+            "allergies": profile.get("allergies", ""),
+            "department": "",
+            "recommended_department": "",
+            "triage_level": 0,
+            "triage_summary": "",
+            "queue_number": 0,
+            "patient_phone": profile.get("phone", ""),
+            "session_id": "",
+            "status": "",
+            "booking_source": "",
+            "medical_record_id": "",
+            "doctor_id": "",
+            "records_count": len(records),
+        }
+        return self._merge_patient_with_medical_record(
+            base_patient,
+            self._pick_relevant_medical_record(records, appointment_id),
+            records_count=len(records),
+        )
 
     def get_history(self, patient_id: str) -> list[dict]:
         if self._firebase_available and get_firebase_medical_records_by_patient is not None:
@@ -384,7 +555,7 @@ class Agent2EMRService:
                     return rows
             except Exception:
                 pass
-        return self._mock_history.get(patient_id, [])
+        return []
 
     def save(self, req) -> str:
         emr_id = str(uuid4())[:8].upper()
@@ -455,18 +626,4 @@ class Agent2EMRService:
             last_diagnosis=normalized["diagnosis"],
             last_treatment_plan=normalized["treatment_plan"],
         )
-
-        if req.patient_id in self._mock_patients:
-            self._mock_patients[req.patient_id]["diagnosis"] = normalized["diagnosis"]
-            self._mock_patients[req.patient_id]["treatment_plan"] = normalized["treatment_plan"]
-
-        history_item = {
-            "visit_date": datetime.now().date().isoformat(),
-            "chief_complaint": normalized["chief_complaint"],
-            "diagnosis": normalized["diagnosis"],
-            "treatment": normalized["treatment_plan"],
-            "follow_up_date": normalized["follow_up_date"],
-            "doctor": req.doctor_id,
-        }
-        self._mock_history.setdefault(req.patient_id, []).insert(0, history_item)
         return emr_id

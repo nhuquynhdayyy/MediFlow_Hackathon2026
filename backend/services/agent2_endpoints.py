@@ -488,9 +488,14 @@ async def get_patients():
     return {"patients": emr_service.get_patient_queue()}
 
 
+@router.get("/appointments")
+async def get_appointments():
+    return {"appointments": emr_service.get_patient_queue()}
+
+
 @router.get("/emr/patient/{patient_id}")
-async def get_patient(patient_id: str):
-    data = emr_service.get_patient(patient_id)
+async def get_patient(patient_id: str, appointment_id: str = ""):
+    data = emr_service.get_patient(patient_id, appointment_id=appointment_id)
     if not data:
         raise HTTPException(status_code=404, detail="Khong tim thay benh nhan")
     return data

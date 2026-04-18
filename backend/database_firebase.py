@@ -729,6 +729,34 @@ def get_appointments_by_uid(uid):
     return results
 
 
+def get_doctor_queue_appointments(*, limit=200, statuses=None):
+    """Fetch appointment items for the doctor workspace."""
+    allowed_statuses = (
+        {
+            str(status).strip().lower()
+            for status in (statuses or [])
+            if str(status).strip()
+        }
+        if statuses is not None
+        else set()
+    )
+    docs = db.collection("appointments").limit(limit).stream()
+    results = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        status = str(data.get("status") or "waiting").strip().lower()
+        if allowed_statuses and status not in allowed_statuses:
+            continue
+        results.append({"id": doc.id, **data})
+    results.sort(
+        key=lambda item: _parse_datetime(
+            item.get("created_at") or item.get("scheduled_at") or item.get("updated_at")
+        )
+        or datetime.min
+    )
+    return results
+
+
 def save_chat_session(session_id, uid, messages, triage_level=None, department=None):
     """Backwards-compatible triage chat persistence."""
     save_chat_session_enriched(

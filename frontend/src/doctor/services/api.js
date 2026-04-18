@@ -3,8 +3,16 @@ import axios from 'axios'
 const BASE = '/api/doctor'
 const api = axios.create({ baseURL: BASE, timeout: 60000 })
 
-export const fetchPatients = () => api.get('/emr/patients').then((response) => response.data.patients)
-export const fetchPatient = (id) => api.get(`/emr/patient/${id}`).then((response) => response.data)
+export const fetchAppointmentQueue = () =>
+  api.get('/appointments').then((response) => response.data.appointments)
+
+export const fetchPatients = fetchAppointmentQueue
+export const fetchPatient = (id, appointmentId = '') =>
+  api
+    .get(`/emr/patient/${id}`, {
+      params: appointmentId ? { appointment_id: appointmentId } : undefined,
+    })
+    .then((response) => response.data)
 export const fetchHistory = (id) => api.get(`/emr/history/${id}`).then((response) => response.data.history)
 export const saveEMR = (data) => api.post('/emr/save', data).then((response) => response.data)
 

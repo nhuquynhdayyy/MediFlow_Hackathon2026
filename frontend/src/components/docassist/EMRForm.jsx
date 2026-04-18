@@ -140,7 +140,7 @@ export default function EMRForm() {
           description: emr.treatment_plan || '',
           medications: mapPrescriptionsToTreatment(emr.prescriptions || []),
         },
-        current_date: getTodayDate(),
+        current_date: emr.current_date || getTodayDate(),
         allergies: activePatient.allergies || '',
         current_medications: activePatient.current_medications || [],
         prescriptions: emr.prescriptions || [],

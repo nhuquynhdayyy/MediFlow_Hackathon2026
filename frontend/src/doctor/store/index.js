@@ -7,6 +7,7 @@ const createInitialState = () => ({
     history: '',
     diagnosis: '',
     treatment_plan: '',
+    current_date: '',
     follow_up_date: '',
     notes: '',
     prescriptions: [],
