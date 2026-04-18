@@ -8,7 +8,7 @@ import json
 import uuid
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -24,25 +24,31 @@ from services.triage_agent import TriageAgentService
 try:
     from database_firebase import (
         append_workflow_event,
+        create_medical_record as firebase_create_medical_record,
         create_appointment,
         get_patient_info,
         get_appointments_by_uid,
+        get_medical_records_by_patient as firebase_get_medical_records_by_patient,
         save_ai_recommendation,
         save_chat_session,
         save_chat_session_enriched,
         save_patient_profile,
+        update_medical_record as firebase_update_medical_record,
     )
     FIREBASE_ENABLED = True
 except Exception as _fb_err:
     FIREBASE_ENABLED = False
     append_workflow_event = None
+    firebase_create_medical_record = None
     create_appointment = None
+    firebase_get_medical_records_by_patient = None
     get_appointments_by_uid = None
     get_patient_info = None
     save_ai_recommendation = None
     save_chat_session = None
     save_chat_session_enriched = None
     save_patient_profile = None
+    firebase_update_medical_record = None
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -225,6 +231,44 @@ class SaveChatSessionRequest(BaseModel):
     summary: Optional[str] = ""
     chief_complaint: Optional[str] = ""
     recommended_action: Optional[str] = ""
+
+
+class MedicalRecordMedication(BaseModel):
+    name: str = ""
+    dosage: str = ""
+    usage: str = ""
+
+
+class MedicalRecordTreatment(BaseModel):
+    description: str = ""
+    medications: list[MedicalRecordMedication] = []
+
+
+class CreateMedicalRecordRequest(BaseModel):
+    patient_id: str
+    full_name: Optional[str] = ""
+    age: Optional[Union[int, str]] = ""
+    gender: Optional[str] = ""
+    diagnosis: Optional[str] = ""
+    treatment: MedicalRecordTreatment = MedicalRecordTreatment()
+    current_date: Optional[str] = ""
+    follow_up_date: Optional[str] = ""
+    notes: Optional[str] = ""
+    appointment_id: Optional[str] = ""
+    doctor_id: Optional[str] = ""
+    department: Optional[str] = ""
+    source_agent: Optional[str] = "api_medical_records"
+
+
+class UpdateMedicalRecordRequest(BaseModel):
+    full_name: Optional[str] = ""
+    age: Optional[Union[int, str]] = ""
+    gender: Optional[str] = ""
+    diagnosis: Optional[str] = ""
+    treatment: Optional[MedicalRecordTreatment] = None
+    current_date: Optional[str] = ""
+    follow_up_date: Optional[str] = ""
+    notes: Optional[str] = ""
 
 # â”€â”€ Health Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.get("/health")
@@ -651,6 +695,46 @@ def api_save_session(req: SaveChatSessionRequest):
         save_chat_session(req.session_id, req.patient_uid,
                           req.messages, req.triage_level, req.department)
     return {"status": "success"}
+
+
+@app.post("/api/medical-records/create")
+def api_create_medical_record(req: CreateMedicalRecordRequest):
+    """Create a normalized medical record in Firestore."""
+    if not FIREBASE_ENABLED or firebase_create_medical_record is None:
+        raise HTTPException(status_code=503, detail="Firebase chua duoc cau hinh")
+    record_id = firebase_create_medical_record(
+        req.model_dump(),
+        actor_id=req.doctor_id or req.patient_id,
+        actor_role="doctor" if req.doctor_id else "system",
+        source=req.source_agent or "api_medical_records_create",
+    )
+    return {"status": "success", "medical_record_id": record_id}
+
+
+@app.get("/api/medical-records/patient/{patient_id}")
+def api_get_medical_records_by_patient(patient_id: str):
+    """Fetch patient medical records ordered from newest to oldest."""
+    if not FIREBASE_ENABLED or firebase_get_medical_records_by_patient is None:
+        raise HTTPException(status_code=503, detail="Firebase chua duoc cau hinh")
+    return {
+        "status": "success",
+        "data": firebase_get_medical_records_by_patient(patient_id),
+    }
+
+
+@app.put("/api/medical-records/update/{patient_id}")
+def api_update_medical_record(patient_id: str, req: UpdateMedicalRecordRequest):
+    """Allow patients to fill missing medical-record fields without overwriting doctor data."""
+    if not FIREBASE_ENABLED or firebase_update_medical_record is None:
+        raise HTTPException(status_code=503, detail="Firebase chua duoc cau hinh")
+    updated_record = firebase_update_medical_record(
+        patient_id,
+        req.model_dump(exclude_none=True),
+        actor_id=patient_id,
+        actor_role="patient",
+        source="api_medical_records_update",
+    )
+    return {"status": "success", "data": updated_record}
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

@@ -8,6 +8,7 @@ const api = axios.create({ baseURL: BASE, timeout: 60000 })
 // â”€â”€ Generic helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const post = (url, data) => api.post(url, data).then((r) => r.data)
 const get = (url) => api.get(url).then((r) => r.data)
+const put = (url, data) => api.put(url, data).then((r) => r.data)
 
 const parseJsonMaybe = (text, fallback = {}) => {
   if (!text || typeof text !== 'string') return fallback
@@ -183,6 +184,15 @@ export const saveChatSession = (data) =>
   post('/chat-sessions/save', data)
 
 // â”€â”€ Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const createMedicalRecord = (data) =>
+  post('/medical-records/create', data)
+
+export const getMedicalRecordsByPatient = (patientId) =>
+  get(`/medical-records/patient/${patientId}`)
+
+export const updateMedicalRecord = (patientId, data) =>
+  put(`/medical-records/update/${patientId}`, data)
+
 export const healthCheck = () => axios.get('/health').then(r => r.data)
 
 export const register = async (email, password) => {

@@ -3,7 +3,7 @@ Pydantic models — api_key và model KHÔNG còn trong request body.
 Backend tự đọc từ .env
 """
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 
 
 class ChatMessage(BaseModel):
@@ -87,6 +87,9 @@ class SaveEMRRequest(BaseModel):
     patient_id:     str
     appointment_id: str = ""
     patient_name:   str
+    full_name:      str = ""
+    age:            Optional[Union[int, str]] = ""
+    gender:         str = ""
     department:     str = ""
     chief_complaint: str = ""
     symptoms:        str = ""
@@ -95,12 +98,14 @@ class SaveEMRRequest(BaseModel):
     diagnosis:       str = ""
     preliminary_diagnosis: str = ""
     treatment_plan:  str = ""
+    current_date:    str = ""
     allergies:       str = ""
     current_medications: Optional[List[str]] = []
     follow_up_date:  str = ""
     prescriptions:   Optional[List[dict]] = []
     lab_orders:      Optional[List[str]]  = []
     notes:           str  = ""
+    treatment:       Optional[dict] = None
     doctor_id:       str  = "DR001"
     triage_level:    Optional[int] = None
     soap:            Optional[dict] = None

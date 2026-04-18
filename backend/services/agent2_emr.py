@@ -9,12 +9,20 @@ from typing import Optional
 from uuid import uuid4
 
 try:
-    from database_firebase import append_workflow_event, db as firebase_db, update_appointment_status  # type: ignore
+    from database_firebase import (  # type: ignore
+        append_workflow_event,
+        create_medical_record as create_firebase_medical_record,
+        db as firebase_db,
+        get_medical_records_by_patient as get_firebase_medical_records_by_patient,
+        update_appointment_status,
+    )
 
     FIREBASE_AVAILABLE = True
 except Exception:
     append_workflow_event = None
+    create_firebase_medical_record = None
     firebase_db = None
+    get_firebase_medical_records_by_patient = None
     update_appointment_status = None
     FIREBASE_AVAILABLE = False
 
@@ -350,26 +358,30 @@ class Agent2EMRService:
         return self._mock_patients.get(patient_id)
 
     def get_history(self, patient_id: str) -> list[dict]:
-        if self._firebase_available:
+        if self._firebase_available and get_firebase_medical_records_by_patient is not None:
             try:
-                docs = self._db.collection("medical_records").where("patient_id", "==", patient_id).stream()
+                records = get_firebase_medical_records_by_patient(patient_id, limit=20)
                 rows = []
-                for doc in docs:
-                    item = doc.to_dict() or {}
+                for item in records:
                     emr_data = item.get("emr_data") or {}
+                    treatment = item.get("treatment") or {}
+                    treatment_text = (
+                        treatment.get("description", "")
+                        if isinstance(treatment, dict)
+                        else str(treatment or "")
+                    )
                     rows.append(
                         {
-                            "visit_date": str(item.get("record_date", ""))[:10],
+                            "visit_date": str(item.get("current_date") or item.get("record_date") or "")[:10],
                             "chief_complaint": emr_data.get("chief_complaint", "") or item.get("chief_complaint", ""),
                             "diagnosis": item.get("diagnosis", "") or emr_data.get("diagnosis", ""),
-                            "treatment": item.get("treatment", "") or emr_data.get("treatment_plan", ""),
-                            "follow_up_date": emr_data.get("follow_up_date", ""),
+                            "treatment": treatment_text or item.get("treatment_plan", "") or emr_data.get("treatment_plan", ""),
+                            "follow_up_date": item.get("follow_up_date", "") or emr_data.get("follow_up_date", ""),
                             "doctor": item.get("doctor_id", "DR001"),
                         }
                     )
-                rows.sort(key=lambda item: item.get("visit_date", ""), reverse=True)
                 if rows:
-                    return rows[:20]
+                    return rows
             except Exception:
                 pass
         return self._mock_history.get(patient_id, [])
@@ -395,37 +407,22 @@ class Agent2EMRService:
         }
         self._saved_records[req.patient_id] = record
 
-        if self._firebase_available:
+        if self._firebase_available and create_firebase_medical_record is not None:
             try:
-                self._db.collection("medical_records").document(emr_id).set(
+                create_firebase_medical_record(
                     {
-                        "patient_id": req.patient_id,
-                        "patient_name": req.patient_name,
-                        "appointment_id": req.appointment_id,
-                        "department": req.department,
-                        "triage_level": req.triage_level,
-                        "doctor_id": req.doctor_id,
-                        "chief_complaint": normalized["chief_complaint"],
-                        "symptoms": normalized["symptoms"],
-                        "history": normalized["history"],
-                        "medical_history": normalized["medical_history"],
-                        "allergies": normalized["allergies"],
-                        "current_medications": normalized["current_medications"],
-                        "diagnosis": normalized["diagnosis"],
-                        "preliminary_diagnosis": normalized["preliminary_diagnosis"],
-                        "treatment": normalized["treatment_plan"],
-                        "treatment_plan": normalized["treatment_plan"],
-                        "follow_up_date": normalized["follow_up_date"],
-                        "prescriptions": normalized["prescriptions"],
-                        "lab_orders": normalized["lab_orders"],
-                        "notes": normalized["notes"],
-                        "soap": normalized["soap"],
-                        "status": "completed",
+                        **req.model_dump(),
+                        "full_name": req.full_name or req.patient_name,
+                        "age": req.age,
+                        "gender": req.gender,
+                        "current_date": req.current_date or datetime.now().date().isoformat(),
                         "source_agent": "agent2_doctor",
-                        "record_date": recorded_at,
-                        "updated_at": recorded_at,
                         "emr_data": emr_payload,
-                    }
+                    },
+                    medical_record_id=emr_id,
+                    actor_id=req.doctor_id,
+                    actor_role="doctor",
+                    source="backend_agent2",
                 )
             except Exception:
                 pass

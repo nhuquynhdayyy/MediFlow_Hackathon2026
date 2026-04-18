@@ -11,6 +11,21 @@ import HistoryModal from './HistoryModal'
 
 const TABS = ['Ho so benh an', 'Don thuoc', 'Xet nghiem']
 
+function getTodayDate() {
+  const now = new Date()
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
+function mapPrescriptionsToTreatment(prescriptions = []) {
+  return prescriptions.map((item) => ({
+    name: item.drug || item.generic || item.name || '',
+    dosage: item.dose || item.dosage || item.quantity || '',
+    usage: [item.route, item.frequency, item.days ? `${item.days} ngay` : '', item.instructions]
+      .filter(Boolean)
+      .join(' | '),
+  }))
+}
+
 export default function EMRForm() {
   const { activePatient, emr, setEmrField, addChatMessage, loading, setLoading } = useStore()
   const [tab, setTab] = useState(0)
@@ -109,6 +124,9 @@ export default function EMRForm() {
         patient_id: activePatient.id,
         appointment_id: activePatient.appointment_id || '',
         patient_name: activePatient.name,
+        full_name: activePatient.name,
+        age: activePatient.age || '',
+        gender: activePatient.gender || '',
         department: activePatient.department || activePatient.recommended_department || activePatient.room || '',
         triage_level: activePatient.triage_level || null,
         chief_complaint: emr.chief_complaint,
@@ -118,6 +136,11 @@ export default function EMRForm() {
         diagnosis: emr.diagnosis,
         preliminary_diagnosis: emr.diagnosis,
         treatment_plan: emr.treatment_plan,
+        treatment: {
+          description: emr.treatment_plan || '',
+          medications: mapPrescriptionsToTreatment(emr.prescriptions || []),
+        },
+        current_date: getTodayDate(),
         allergies: activePatient.allergies || '',
         current_medications: activePatient.current_medications || [],
         prescriptions: emr.prescriptions || [],

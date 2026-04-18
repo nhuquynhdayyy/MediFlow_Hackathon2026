@@ -1,7 +1,9 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
-import { Activity, LogOut } from 'lucide-react'
+import { Activity, FileText, LogOut } from 'lucide-react'
+
 import TriagePage from './pages/TriagePage'
 import DoctorWorkspace from './pages/DoctorWorkspace'
+import MedicalRecordsPage from './pages/MedicalRecordsPage'
 import SettingsBar from './components/SettingsBar'
 import AuthOverlay from './components/AuthOverlay'
 import { useStore } from './store'
@@ -45,7 +47,17 @@ export default function App() {
               }`
             }
           >
-            <Activity size={15} /> Agent 1 · Triage
+            <Activity size={15} /> Agent 1 - Triage
+          </NavLink>
+          <NavLink
+            to="/medical-records"
+            className={({ isActive }) =>
+              `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                isActive ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-100'
+              }`
+            }
+          >
+            <FileText size={15} /> Ho so benh an
           </NavLink>
         </div>
 
@@ -72,6 +84,7 @@ export default function App() {
       <main className="flex-1 overflow-hidden">
         <Routes>
           <Route path="/" element={<TriagePage />} />
+          <Route path="/medical-records" element={<MedicalRecordsPage />} />
           <Route path="/docassist" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

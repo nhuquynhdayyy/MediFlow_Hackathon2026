@@ -113,12 +113,20 @@ class EMRService:
         self._firebase_db = None
         self._firebase_available = False
         try:
-            from database_firebase import db  # type: ignore
+            from database_firebase import (  # type: ignore
+                create_medical_record as create_firebase_medical_record,
+                db,
+                get_medical_records_by_patient as get_firebase_medical_records_by_patient,
+            )
 
             self._firebase_db = db
+            self._create_medical_record = create_firebase_medical_record
+            self._get_medical_records_by_patient = get_firebase_medical_records_by_patient
             self._firebase_available = True
         except Exception:
             self._firebase_db = None
+            self._create_medical_record = None
+            self._get_medical_records_by_patient = None
             self._firebase_available = False
 
     def _build_patient_from_appointment(self, appointment_id: str, appt: dict) -> dict:
@@ -207,48 +215,54 @@ class EMRService:
         })
         if self._firebase_available:
             try:
-                payload = {
-                    "patient_id": patient_id,
-                    "doctor_id": emr_data.get("doctor_id", "DR001"),
-                    "chief_complaint": normalized["chief_complaint"],
-                    "symptoms": normalized["symptoms"],
-                    "history": normalized["history"],
-                    "medical_history": normalized["medical_history"],
-                    "allergies": normalized["allergies"],
-                    "current_medications": normalized["current_medications"],
-                    "diagnosis": normalized["diagnosis"],
-                    "preliminary_diagnosis": normalized["preliminary_diagnosis"],
-                    "treatment": normalized["treatment_plan"],
-                    "treatment_plan": normalized["treatment_plan"],
-                    "follow_up_date": normalized["follow_up_date"],
-                    "prescriptions": normalized["prescriptions"],
-                    "lab_orders": normalized["lab_orders"],
-                    "notes": normalized["notes"],
-                    "soap": normalized["soap"],
-                    "record_date": datetime.now().isoformat(),
-                    "emr_data": normalized,
-                }
-                self._firebase_db.collection("medical_records").add(payload)
+                if self._create_medical_record is not None:
+                    patient = self.get_patient(patient_id) or {}
+                    self._create_medical_record(
+                        {
+                            "patient_id": patient_id,
+                            "full_name": emr_data.get("patient_name") or patient.get("name", ""),
+                            "age": emr_data.get("age", ""),
+                            "gender": emr_data.get("gender", ""),
+                            "doctor_id": emr_data.get("doctor_id", "DR001"),
+                            "chief_complaint": normalized["chief_complaint"],
+                            "symptoms": normalized["symptoms"],
+                            "history": normalized["history"],
+                            "medical_history": normalized["medical_history"],
+                            "allergies": normalized["allergies"],
+                            "current_medications": normalized["current_medications"],
+                            "diagnosis": normalized["diagnosis"],
+                            "preliminary_diagnosis": normalized["preliminary_diagnosis"],
+                            "treatment_plan": normalized["treatment_plan"],
+                            "current_date": datetime.now().date().isoformat(),
+                            "follow_up_date": normalized["follow_up_date"],
+                            "prescriptions": normalized["prescriptions"],
+                            "lab_orders": normalized["lab_orders"],
+                            "notes": normalized["notes"],
+                            "soap": normalized["soap"],
+                            "source_agent": "legacy_emr_service",
+                        },
+                        actor_id=emr_data.get("doctor_id", "DR001"),
+                        actor_role="doctor",
+                        source="backend_legacy_emr",
+                    )
             except Exception:
                 pass
 
     def get_history(self, patient_id: str) -> list:
-        if self._firebase_available:
+        if self._firebase_available and self._get_medical_records_by_patient is not None:
             try:
-                docs = self._firebase_db.collection("medical_records").where("patient_id", "==", patient_id).stream()
+                docs = self._get_medical_records_by_patient(patient_id, limit=20)
                 rows = []
-                for doc in docs:
-                    item = doc.to_dict() or {}
+                for item in docs:
+                    treatment = item.get("treatment") or {}
                     rows.append(
                         {
-                            "date": str(item.get("record_date", ""))[:10],
+                            "date": str(item.get("current_date") or item.get("record_date") or "")[:10],
                             "doctor": item.get("doctor_id", ""),
                             "diagnosis": item.get("diagnosis", ""),
-                            "treatment": item.get("treatment", ""),
+                            "treatment": treatment.get("description", "") if isinstance(treatment, dict) else str(treatment or ""),
                         }
                     )
-                rows.sort(key=lambda x: str(x.get("date", "")), reverse=True)
-                rows = rows[:20]
                 if rows:
                     return rows
             except Exception:

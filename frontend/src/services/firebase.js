@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore"; 
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAINveqFVzch_OEHY9u9UprIn-ehuxIhZ8",
-  authDomain: "mediflow-ai-a1cc9.firebaseapp.com",
-  projectId: "mediflow-ai-a1cc9",
-  storageBucket: "mediflow-ai-a1cc9.firebasestorage.app",
-  messagingSenderId: "126587419613",
-  appId: "1:126587419613:web:e30c4aa3d0f7da15f65434",
-  measurementId: "G-FKHJPKF8KP"
+  apiKey: "AIzaSyCoPYOPndh385rHVAPwWFypVTDCbERsfGQ",
+  authDomain: "mediflow-ai-v2.firebaseapp.com",
+  projectId: "mediflow-ai-v2",
+  storageBucket: "mediflow-ai-v2.firebasestorage.app",
+  messagingSenderId: "291284082681",
+  appId: "1:291284082681:web:ff73730a80b2fc981ae728",
+  measurementId: "G-PHQMTF65RS"
 };
 
 const app = initializeApp(firebaseConfig);
