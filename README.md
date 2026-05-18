@@ -1,7 +1,5 @@
 # MediFlow AI
 
-**GDGoC Hackathon Vietnam 2026**
-
 MediFlow AI là demo hệ thống bệnh viện theo hướng **Multi-Agent**, nơi các tác vụ của bệnh nhân, bác sĩ và điều phối vận hành được nối với nhau trên cùng một luồng dữ liệu.
 
 Trong branch hiện tại, app active nằm ở **`frontend/`** và **`backend/`**. 
@@ -163,7 +161,6 @@ Patient Medical Records UI
 
 ### AI / Voice
 
-- **FPT AI Marketplace** là LLM backend đang được dùng thật trong app.
 - Model mặc định ở backend: `Llama-3.3-70B-Instruct`.
 - Patient UI còn cho phép chọn một số model khác từ settings.
 - Voice hiện tại dùng:
@@ -178,13 +175,11 @@ Patient Medical Records UI
 - Node.js 18+
 - Python 3.11+
 - Tài khoản Firebase
-- FPT AI API key
 
 ### Cấu hình backend
 
 1. Tạo file `backend/.env` từ `backend/.env.example`
-2. Điền `FPT_API_KEY`
-3. Đảm bảo file `backend/serviceAccountKey.json` trỏ đúng Firebase service account
+2. Đảm bảo file `backend/serviceAccountKey.json` trỏ đúng Firebase service account
 
 ### Chạy backend
 
